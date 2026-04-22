@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+body {
+  margin: 0;
+  background: #0e0e16;
+  color: #e2e2e8;
+  font-family: 'Inter', -apple-system, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root { min-height: 100vh; }
+
+/* 스크롤바 */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #252535; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #353545; }
+
+/* WCL 스타일 테이블 */
+.wcl-table {
+  background: #131320;
+  border: 1px solid #1c1c30;
+  overflow-x: auto;
+}
+/* 내부 grid row가 좁은 화면에서 뭉개지지 않도록 필요 너비 유지 → 부모 overflow로 스크롤 */
+.wcl-table > .wcl-table-header,
+.wcl-table > .wcl-table-row,
+.wcl-table > button.wcl-table-row {
+  min-width: max-content;
+}
+.wcl-table-header {
+  background: #0f0f1a;
+  border-bottom: 1px solid #1c1c30;
+}
+.wcl-table-row {
+  border-bottom: 1px solid #16162a;
+  transition: background 0.1s;
+  cursor: pointer;
+}
+.wcl-table-row:hover {
+  background: #1a1a2e;
+}
+.wcl-table-row:last-child {
+  border-bottom: none;
+}
+
+/* 범용 행 (캐릭터 선택, 로그 목록) */
+.wcl-row {
+  background: #131320;
+  border: 1px solid #1c1c30;
+  transition: all 0.1s;
+  cursor: pointer;
+}
+.wcl-row:hover {
+  background: #1a1a2e;
+  border-color: #252540;
+}
+
+/* 카드 */
+.wcl-card {
+  background: #131320;
+  border: 1px solid #1c1c30;
+  border-radius: 6px;
+}
+
+/* 스킬 아이콘 */
+.spell-icon {
+  border: 1.5px solid #3a3a4a;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+/* 타임라인 행 */
+.timeline-row { transition: background 0.1s; }
+.timeline-row:hover { background: #1a1a2e; }
+
+/* 로딩 스피너 */
+@keyframes spin { to { transform: rotate(360deg); } }
+.animate-spin { animation: spin 0.8s linear infinite; }
