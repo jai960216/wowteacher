@@ -8,6 +8,7 @@
 
 import { getToken } from "./auth";
 import { setRateLimitData } from "./rateLimit";
+import { detectHeroTalent } from "../specs/heroTalents";
 // spec 필드는 항상 특성명 (Devourer, Fury 등). 영웅특성은 별도.
 
 const PUBLIC_API = "https://www.warcraftlogs.com/api/v2/client";
@@ -335,6 +336,81 @@ export async function getCasts(
 }
 
 /** 특정 전투의 버프 이벤트 */
+/**
+ * 특정 fight의 start/end 타임스탬프만 가볍게 조회.
+ * 랭킹 rank에서 외부 버프 펼치기 시 getBuffsTable 호출 전에 필요.
+ */
+export async function getFightTime(
+  reportCode: string,
+  fightID: number,
+): Promise<{ startTime: number; endTime: number } | null> {
+  const data: any = await query<any>(`
+    query ($code: String!, $fightIDs: [Int]!) {
+      reportData {
+        report(code: $code) {
+          fights(fightIDs: $fightIDs) {
+            id
+            startTime
+            endTime
+          }
+        }
+      }
+    }
+  `, { code: reportCode, fightIDs: [fightID] });
+  const fight = data.reportData?.report?.fights?.[0];
+  if (!fight) return null;
+  return { startTime: fight.startTime ?? 0, endTime: fight.endTime ?? 0 };
+}
+
+/**
+ * 특정 플레이어가 받은 buff 요약 (targetID 기준).
+ * WCL의 report.table(dataType: Buffs) 한 번 호출로 uptime·횟수 요약 받음.
+ * 외부 버프(마주/칠흑 등) 카운트 용도.
+ */
+export async function getBuffsTable(
+  reportCode: string,
+  targetId: number,
+  startTime: number,
+  endTime: number,
+): Promise<Array<{ spellId: number; name: string; icon: string; totalUses: number; uptimePercent: number }>> {
+  const data: any = await query<any>(`
+    query ($code: String!, $startTime: Float!, $endTime: Float!, $targetID: Int!) {
+      reportData {
+        report(code: $code) {
+          table(
+            dataType: Buffs
+            startTime: $startTime
+            endTime: $endTime
+            targetID: $targetID
+          )
+        }
+      }
+    }
+  `, {
+    code: reportCode,
+    startTime,
+    endTime,
+    targetID: targetId,
+  });
+
+  const table = data.reportData.report.table;
+  const parsed = typeof table === "string" ? JSON.parse(table) : table;
+  // WCL 응답 shape: { data: { auras: [...] } } 또는 { data: { entries: [...] } } — fallback 모두 시도
+  const entries: any[] = parsed?.data?.auras ?? parsed?.auras ?? parsed?.data?.entries ?? parsed?.entries ?? [];
+  const duration = endTime - startTime;
+
+  return entries.map((e: any) => {
+    const totalUptime = e.totalUptime ?? e.uptime ?? 0;
+    return {
+      spellId: e.guid ?? e.id ?? 0,
+      name: e.name ?? "",
+      icon: (e.icon ?? "").replace(/\.jpg$/i, ""),
+      totalUses: e.totalUses ?? e.uses ?? 0,
+      uptimePercent: duration > 0 ? Math.round((totalUptime / duration) * 1000) / 10 : 0,
+    };
+  });
+}
+
 export async function getBuffs(
   reportCode: string,
   _fightId: number,
@@ -487,6 +563,8 @@ export interface WCLRanking {
   fightID: number;
   rank: number;
   bracketData: number;  // ilvl 구간 (WCL bracket ID)
+  heroTalent?: string;  // includeCombatantInfo 응답에서 auras로 감지. 실패 시 undefined
+  externalBuffs?: Array<{ spellId: number; name: string; count: number; uptimePercent: number }>;
 }
 
 /** 캐릭터의 특정 보스 킬 기록 (report code + fight ID 포함) */
@@ -578,7 +656,7 @@ export async function searchCharacter(
   name: string,
   serverSlug: string,
   serverRegion: string,
-): Promise<{ classID: number; className: string; allZoneRankings: ZoneRankingData[]; recentReports: any[] }> {
+): Promise<{ classID: number; className: string; allZoneRankings: ZoneRankingData[] }> {
   // 난이도별 zoneRankings를 GraphQL alias로 한번에 가져옴
   const data: any = await query(`
     query ($name: String!, $server: String!, $region: String!) {
@@ -589,24 +667,6 @@ export async function searchCharacter(
           mythic: zoneRankings(difficulty: 5)
           heroic: zoneRankings(difficulty: 4)
           normal: zoneRankings(difficulty: 3)
-          recentReports(limit: 10) {
-            data {
-              code
-              startTime
-              endTime
-              zone { name }
-              fights {
-                id
-                name
-                startTime
-                endTime
-                kill
-                encounterID
-                difficulty
-                friendlyPlayers
-              }
-            }
-          }
         }
       }
     }
@@ -653,18 +713,13 @@ export async function searchCharacter(
 
   const classID = char.classID ?? 0;
   const className = CLASSID_TO_APINAME[classID] ?? "";
-  const reports = char.recentReports?.data ?? [];
   console.log("[searchCharacter]", name, "classID:", classID, "→ className:", className,
-    "| recentReports:", reports.length, "| zoneRankings:", allZoneRankings.map(z => DIFFICULTY_NAMES[z.difficulty]).join(",") || "없음");
+    "| zoneRankings:", allZoneRankings.map(z => DIFFICULTY_NAMES[z.difficulty]).join(",") || "없음");
 
   return {
     classID,
     className,
     allZoneRankings,
-    recentReports: reports.map((r: any) => ({
-      ...r,
-      zoneName: r.zone?.name ?? "",
-    })),
   };
 }
 
@@ -713,6 +768,7 @@ export async function getEncounterRankings(
             page: $page
             partition: $partition
             metric: $metric
+            includeCombatantInfo: true
           )
         }
       }
@@ -763,19 +819,26 @@ export async function getEncounterRankings(
     );
   }
 
-  const mapped = filtered.map((r: any, i: number) => ({
-    name: r.name ?? "",
-    server: r.server?.name ?? r.serverName ?? "",
-    region: r.server?.region ?? r.regionName ?? "",
-    class: extractClassName(r) || className,
-    spec: r.spec ?? r.specName ?? specName ?? "",
-    amount: r.amount ?? r.total ?? 0,
-    duration: r.duration ?? 0,
-    reportCode: r.report?.code ?? r.reportCode ?? "",
-    fightID: r.report?.fightID ?? r.fightID ?? 0,
-    rank: i + 1,
-    bracketData: r.bracketData ?? 0,
-  }));
+  const mapped: WCLRanking[] = filtered.map((r: any, i: number) => {
+    // combatantInfo.auras에서 영웅 특성 감지 (이름 기반)
+    const ci = r.combatantInfo ?? {};
+    const auraNames: string[] = (ci.auras ?? []).map((a: any) => a?.name ?? "").filter(Boolean);
+    const detectedHero = detectHeroTalent(auraNames, classNoSpace);
+    return {
+      name: r.name ?? "",
+      server: r.server?.name ?? r.serverName ?? "",
+      region: r.server?.region ?? r.regionName ?? "",
+      class: extractClassName(r) || className,
+      spec: r.spec ?? r.specName ?? specName ?? "",
+      amount: r.amount ?? r.total ?? 0,
+      duration: r.duration ?? 0,
+      reportCode: r.report?.code ?? r.reportCode ?? "",
+      fightID: r.report?.fightID ?? r.fightID ?? 0,
+      rank: i + 1,
+      bracketData: r.bracketData ?? 0,
+      heroTalent: detectedHero || undefined,
+    };
+  });
 
   return {
     rankings: mapped,

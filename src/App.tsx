@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useSyncExternalStore } from "react";
+import { useState, useEffect, useRef, useSyncExternalStore, Fragment } from "react";
 import { isAuthenticated, startAuth, handleCallback, logout } from "./engine/wcl/auth";
 import { subscribeRateLimit, getRateLimitSnapshot } from "./engine/wcl/rateLimit";
 import {
   getMyCharacters, searchCharacter, getReportInfo, getEncounterRankings, getFightPlayerIds, getMyEncounterRankings,
+  getFightTime, getBuffsTable,
   CLASS_NAMES_KR, CLASS_COLORS, DIFFICULTY_NAMES, DIFFICULTY_COLORS,
   getClassIconUrl, getPercentileColor,
   type WCLReportInfo, type WCLRanking, type WCLFight, type ZoneRankingData,
@@ -18,7 +19,7 @@ import { SpellResolver } from "./engine/spell/resolver";
 import type { SpellMeta } from "./engine/spell/types";
 import "./index.css";
 
-type Step = "login" | "characters" | "overview" | "fights" | "myKills" | "rankings" | "result";
+type Step = "login" | "characters" | "overview" | "myKills" | "rankings" | "result";
 
 declare global {
   interface Window {
@@ -37,14 +38,6 @@ interface MyCharacter {
   heroSpec: string;
 }
 
-interface RecentReport {
-  code: string;
-  startTime: number;
-  endTime: number;
-  zoneName: string;
-  fights: WCLFight[];
-}
-
 const ICON_BASE = "https://wow.zamimg.com/images/wow/icons/medium";
 
 function App() {
@@ -58,7 +51,6 @@ function App() {
   const [myChars, setMyChars] = useState<MyCharacter[]>([]);
   const [selectedChar, setSelectedChar] = useState<MyCharacter | null>(null);
   const [allZoneRankings, setAllZoneRankings] = useState<ZoneRankingData[]>([]);
-  const [recentReports, setRecentReports] = useState<RecentReport[]>([]);
   const [reportInfo, setReportInfo] = useState<WCLReportInfo | null>(null);
   const [selectedFight, setSelectedFight] = useState<WCLFight | null>(null);
   const [myPlayerId, setMyPlayerId] = useState<number | null>(null);
@@ -126,25 +118,10 @@ function App() {
       const allBossSpecs = data.allZoneRankings.flatMap(zr => zr.bosses.map(b => b.spec)).filter(Boolean);
       const isHealer = allBossSpecs.some(s => isHealerSpec(s));
       setMetric(isHealer ? "hps" : "dps");
-      console.log("[selectChar] recentReports:", data.recentReports.length, "힐러 감지:", isHealer, "step → overview");
+      console.log("[selectChar] 힐러 감지:", isHealer, "step → overview");
       setSelectedChar(mergedChar);
       setAllZoneRankings(data.allZoneRankings);
-      setRecentReports(data.recentReports);
       setStep("overview");
-    } catch (e) { setError(errorMessage(e)); }
-    finally { setLoading(false); }
-  }
-
-  async function selectReport(code: string) {
-    if (!selectedChar) return;
-    console.log("[selectReport]", code);
-    setLoading(true); setError(null);
-    try {
-      const info = await getReportInfo(code);
-      setReportInfo(info);
-      const me = info.players.find((p) => p.name.toLowerCase() === selectedChar.name.toLowerCase());
-      if (me) setMyPlayerId(me.id);
-      setStep("fights");
     } catch (e) { setError(errorMessage(e)); }
     finally { setLoading(false); }
   }
@@ -188,27 +165,6 @@ function App() {
     rankingsCache.current.set(key, promise);
     promise.catch(() => rankingsCache.current.delete(key));
     return promise;
-  }
-
-  async function selectFight(fight: WCLFight) {
-    if (!selectedChar) return;
-    setSelectedFight(fight); setStatScan(null); setLoading(true); setError(null);
-    // friendlyPlayers로 myPlayerId 보정
-    if (reportInfo && fight.friendlyPlayers.length > 0) {
-      const myNameLower = selectedChar.name.toLowerCase();
-      const candidates = reportInfo.players.filter((p) => p.name.toLowerCase() === myNameLower);
-      const correct = candidates.find((p) => fight.friendlyPlayers.includes(p.id));
-      if (correct && correct.id !== myPlayerId) {
-        console.log(`[selectFight] myPlayerId 보정: ${myPlayerId} → ${correct.id}`);
-        setMyPlayerId(correct.id);
-      }
-    }
-    try {
-      const top = await fetchClassRankings(fight.encounterID, selectedChar.className, fight.difficulty, 30, metric);
-      setRankings(top);
-      setStep("rankings");
-    } catch (e) { setError(errorMessage(e)); }
-    finally { setLoading(false); }
   }
 
   async function selectBossRanking(encounterID: number, encounterName: string, difficulty: number) {
@@ -372,7 +328,7 @@ function App() {
   }
 
   function goBack() {
-    const backMap: Record<string, Step> = { result: "rankings", rankings: "fights", fights: "overview", overview: "characters" };
+    const backMap: Record<string, Step> = { result: "rankings", rankings: "overview", myKills: "overview", overview: "characters" };
     setStep(backMap[step] ?? "characters"); setError(null);
   }
 
@@ -510,82 +466,6 @@ function App() {
               </div>
             ))}
 
-            <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">최근 로그</h2>
-            {(() => {
-              // 레이드 성적의 보스 encounterID 수집
-              const raidEncounterIds = new Set<number>();
-              for (const zr of allZoneRankings) {
-                for (const b of zr.bosses) {
-                  if (b.encounterID > 0) raidEncounterIds.add(b.encounterID);
-                }
-              }
-
-              // 필터: 킬만 + 공찾 제외. encounterID가 있으면 레이드 보스만
-              const filtered = recentReports.filter((r) => {
-                const kills = r.fights?.filter((f) =>
-                  f.encounterID > 0 && f.kill && f.difficulty > 1 &&
-                  (raidEncounterIds.size === 0 || raidEncounterIds.has(f.encounterID))
-                ) ?? [];
-                return kills.length > 0;
-              });
-
-              if (filtered.length === 0) return <p className="text-gray-600 text-center py-8">해당하는 로그가 없습니다</p>;
-
-              return (
-                <div className="space-y-1.5">
-                  {filtered.map((r) => {
-                    const bossFights = r.fights?.filter((f) =>
-                      f.encounterID > 0 && f.kill && f.difficulty > 1 &&
-                      (raidEncounterIds.size === 0 || raidEncounterIds.has(f.encounterID))
-                    ) ?? [];
-                    const uniqueBosses = [...new Set(bossFights.map((f) => f.name))] as string[];
-                    const diff = bossFights[0]?.difficulty ?? 0;
-                    return (
-                      <button key={r.code} onClick={() => selectReport(r.code)} className="wcl-row w-full text-left rounded p-3">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-500 font-mono w-16">{new Date(r.startTime).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit" })}</span>
-                            {r.zoneName && <span className="text-xs text-gray-300">{encounterNameKr(r.zoneName)}</span>}
-                            {diff > 0 && <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ color: DIFFICULTY_COLORS[diff], background: (DIFFICULTY_COLORS[diff] ?? "#888") + "15" }}>{DIFFICULTY_NAMES[diff]}</span>}
-                          </div>
-                          <span className="text-[11px] text-green-500">{bossFights.length}킬</span>
-                        </div>
-                        <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                          {uniqueBosses.map((boss, bi) => (
-                            <span key={bi} className="flex items-center gap-1 text-[11px]">
-                              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                              <span className="text-gray-400">{encounterNameKr(boss)}</span>
-                            </span>
-                          ))}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-
-          </div>
-        )}
-
-        {/* 3. 전투 선택 */}
-        {step === "fights" && !loading && reportInfo && (
-          <div>
-            <h2 className="text-sm font-semibold text-gray-400 mb-1 uppercase tracking-wider">{reportInfo.title || "전투 목록"}</h2>
-            <p className="text-xs text-gray-600 mb-4">분석할 전투를 선택하세요</p>
-            <div className="wcl-table rounded">
-              <div className="wcl-table-header grid grid-cols-[1fr_70px_70px_70px] px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-                <div>보스</div><div className="text-center">결과</div><div className="text-center">난이도</div><div className="text-right">시간</div>
-              </div>
-              {reportInfo.fights.filter(f => f.encounterID > 0 && f.kill).map(f => (
-                <button key={f.id} onClick={() => selectFight(f)} className="wcl-table-row w-full grid grid-cols-[1fr_70px_70px_70px] px-3 py-2.5 items-center text-left">
-                  <div className="flex items-center gap-2"><EncounterIcon encounterID={f.encounterID} /><span className="text-xs text-gray-200">{encounterNameKr(f.name)}</span></div>
-                  <div className="text-center"><span className={`text-[11px] font-semibold ${f.kill ? "text-green-400" : "text-red-400"}`}>{f.kill ? "킬" : "와이프"}</span></div>
-                  <div className="text-center"><span className="text-[10px] font-bold" style={{ color: DIFFICULTY_COLORS[f.difficulty] ?? "#888" }}>{DIFFICULTY_NAMES[f.difficulty] ?? ""}</span></div>
-                  <div className="text-right text-xs text-gray-500 font-mono">{fmtDur(f.endTime - f.startTime)}</div>
-                </button>
-              ))}
-            </div>
           </div>
         )}
 
@@ -693,6 +573,12 @@ function RateLimitBadge() {
 // 랭킹 뷰 (영웅특성 필터)
 // ============================================
 
+interface BuffCacheEntry {
+  loading: boolean;
+  error?: string;
+  buffs?: Array<{ cfg: typeof EXTERNAL_BUFFS[number]; count: number; uptimePercent: number }>;
+}
+
 function RankingsView({ rankings, selectedFight, cName, classID, className, metric, onMetricChange, onAnalysis }: {
   rankings: WCLRanking[];
   selectedFight: WCLFight | null;
@@ -704,6 +590,8 @@ function RankingsView({ rankings, selectedFight, cName, classID, className, metr
   onAnalysis: (r: WCLRanking) => void;
 }) {
   const [specFilter, setSpecFilter] = useState<string>("all");
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+  const [bufCache, setBufCache] = useState<Map<string, BuffCacheEntry>>(new Map());
 
   // 특성별 수집
   const specCounts = new Map<string, number>();
@@ -720,6 +608,43 @@ function RankingsView({ rankings, selectedFight, cName, classID, className, metr
 
   const classFallbackIcon = getClassIconUrl(classID);
   const specIconFor = (spec: string) => getSpecIconUrl(className, spec) || classFallbackIcon;
+
+  const rankKey = (r: WCLRanking) => `${r.reportCode}:${r.fightID}:${r.name}`;
+
+  async function loadBuffs(r: WCLRanking) {
+    const key = rankKey(r);
+    setBufCache(prev => new Map(prev).set(key, { loading: true }));
+    try {
+      const [fight, report] = await Promise.all([
+        getFightTime(r.reportCode, r.fightID),
+        getReportInfo(r.reportCode),
+      ]);
+      if (!fight) throw new Error("전투 시간을 찾을 수 없음");
+      const player = report.players.find(p => p.name.toLowerCase() === r.name.toLowerCase());
+      if (!player) throw new Error(`${r.name} 플레이어를 리포트에서 찾을 수 없음`);
+      const table = await getBuffsTable(r.reportCode, player.id, fight.startTime, fight.endTime);
+      const ext = EXTERNAL_BUFFS.map(cfg => {
+        const hit = table.find(b => cfg.ids.includes(b.spellId) || cfg.nameRegex.test(b.name));
+        return { cfg, count: hit?.totalUses ?? 0, uptimePercent: hit?.uptimePercent ?? 0 };
+      });
+      setBufCache(prev => new Map(prev).set(key, { loading: false, buffs: ext }));
+    } catch (e) {
+      setBufCache(prev => new Map(prev).set(key, { loading: false, error: e instanceof Error ? e.message : String(e) }));
+    }
+  }
+
+  function toggleExpand(r: WCLRanking) {
+    const key = rankKey(r);
+    setExpandedKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+    const entry = bufCache.get(key);
+    if (!entry || (!entry.loading && !entry.buffs && !entry.error)) {
+      void loadBuffs(r);
+    }
+  }
 
   return (
     <div>
@@ -777,25 +702,79 @@ function RankingsView({ rankings, selectedFight, cName, classID, className, metr
         <div className="text-center py-12 text-gray-600 text-sm">데이터 없음</div>
       ) : (
         <div className="wcl-table rounded">
-          <div className="wcl-table-header grid grid-cols-[30px_1fr_100px_90px_60px] px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-            <div>#</div><div>플레이어</div><div>특성</div><div className="text-right">{metric.toUpperCase()}</div><div className="text-right">시간</div>
+          <div className="wcl-table-header grid grid-cols-[30px_1fr_140px_90px_60px_110px] px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+            <div>#</div><div>플레이어</div><div>특성</div><div className="text-right">{metric.toUpperCase()}</div><div className="text-right">시간</div><div className="text-right">외부 버프</div>
           </div>
-          {filtered.map((r, i) => (
-            <button key={`${r.name}-${r.server}-${i}`} onClick={() => onAnalysis(r)}
-              className="wcl-table-row w-full grid grid-cols-[30px_1fr_100px_90px_60px] px-3 py-2.5 items-center text-left">
-              <div className="text-xs font-bold font-mono" style={{ color: i === 0 ? "#ffd700" : i < 3 ? "#c0c0c0" : "#888" }}>{i + 1}</div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-white">{r.name}</span>
-                <span className="text-[10px] text-gray-600">{r.server}</span>
-              </div>
-              <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
-                {(() => { const ic = specIconFor(r.spec); return ic ? <img src={ic} alt="" className="w-4 h-4 rounded-sm" onError={e => (e.currentTarget.style.display = "none")} /> : null; })()}
-                <span>{specNameKr(r.spec)}</span>
-              </div>
-              <div className="text-right text-xs font-mono" style={{ color: "#a78bfa" }}>{fmtDPS(r.amount)}</div>
-              <div className="text-right text-[11px] text-gray-500 font-mono">{fmtDur(r.duration)}</div>
-            </button>
-          ))}
+          {filtered.map((r, i) => {
+            const key = rankKey(r);
+            const expanded = expandedKeys.has(key);
+            const cacheEntry = bufCache.get(key);
+            return (
+              <Fragment key={`${r.name}-${r.server}-${i}`}>
+                <div className="wcl-table-row w-full grid grid-cols-[30px_1fr_140px_90px_60px_110px] px-3 py-2.5 items-center text-left cursor-pointer"
+                  onClick={() => onAnalysis(r)}>
+                  <div className="text-xs font-bold font-mono" style={{ color: i === 0 ? "#ffd700" : i < 3 ? "#c0c0c0" : "#888" }}>{i + 1}</div>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs text-white truncate">{r.name}</span>
+                    <span className="text-[10px] text-gray-600 truncate">{r.server}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[10px] text-gray-400 min-w-0">
+                    {(() => { const ic = specIconFor(r.spec); return ic ? <img src={ic} alt="" className="w-4 h-4 rounded-sm flex-shrink-0" onError={e => (e.currentTarget.style.display = "none")} /> : null; })()}
+                    <div className="flex flex-col leading-tight min-w-0">
+                      <span className="text-gray-300 truncate">{specNameKr(r.spec)}</span>
+                      {r.heroTalent && <span className="text-[9px] truncate" style={{ color: "#a78bfa" }}>{specNameKr(r.heroTalent)}</span>}
+                    </div>
+                  </div>
+                  <div className="text-right text-xs font-mono" style={{ color: "#a78bfa" }}>{fmtDPS(r.amount)}</div>
+                  <div className="text-right text-[11px] text-gray-500 font-mono">{fmtDur(r.duration)}</div>
+                  <div className="flex justify-end">
+                    <button onClick={(e) => { e.stopPropagation(); toggleExpand(r); }}
+                      className="text-[11px] px-2.5 py-1 rounded font-semibold transition-all hover:brightness-110 flex items-center gap-1"
+                      style={expanded
+                        ? { background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }
+                        : { background: "#1c1c30", color: "#c4b5fd", border: "1px solid #3a2a60" }}>
+                      {cacheEntry?.loading ? "..." : expanded ? "▲ 접기" : "버프 ▼"}
+                    </button>
+                  </div>
+                </div>
+                {expanded && (
+                  <div className="px-4 py-3" style={{ background: "linear-gradient(90deg, #0d0a1a, #0f0a20)", borderBottom: "1px solid #1c1c30", borderTop: "1px solid #2a1e4a" }}>
+                    {cacheEntry?.loading && (
+                      <div className="flex items-center gap-2 text-[11px] text-gray-400">
+                        <div className="w-3 h-3 border-2 border-gray-700 border-t-purple-500 rounded-full animate-spin" />
+                        <span>외부 버프 조회 중...</span>
+                      </div>
+                    )}
+                    {cacheEntry?.error && <div className="text-[11px] text-red-400">조회 실패: {cacheEntry.error}</div>}
+                    {cacheEntry?.buffs && (
+                      <div className="flex flex-wrap gap-2">
+                        {cacheEntry.buffs.map(({ cfg, count, uptimePercent }) => {
+                          const received = count > 0;
+                          return (
+                            <div key={cfg.label} className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                              style={received
+                                ? { background: cfg.color + "18", border: `1px solid ${cfg.color}66` }
+                                : { background: "#131320", border: "1px solid #2a2a40", opacity: 0.55 }}>
+                              <span className="text-[11px] font-bold" style={{ color: received ? cfg.color : "#6b7280" }}>{cfg.label}</span>
+                              {received ? (
+                                <div className="flex items-baseline gap-1.5">
+                                  <span className="text-base font-black text-white">{count}</span>
+                                  <span className="text-[10px] text-gray-400">회</span>
+                                  <span className="text-[10px] font-mono" style={{ color: cfg.color }}>· {uptimePercent}%</span>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-gray-600">미수령</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
         </div>
       )}
     </div>
@@ -904,7 +883,6 @@ function AnalysisView({ analysis, spellMeta, cColor, activeTab, setActiveTab,
           ["timeline", "캐스트 타임라인"],
           ["cooldowns", "쿨다운"],
           [analysis.isHealer ? "healing" : "damage", analysis.isHealer ? "힐량 분석" : "피해 분석"],
-          ["resources", "자원"],
         ].map(([key, label]) => (
           <button key={key} onClick={() => setActiveTab(key)}
             className={`flex-shrink-0 sm:flex-1 sm:flex-shrink px-3 sm:px-0 text-xs py-2 rounded font-semibold whitespace-nowrap transition-all ${activeTab === key ? "text-white" : "text-gray-600 hover:text-gray-400"}`}
@@ -925,7 +903,6 @@ function AnalysisView({ analysis, spellMeta, cColor, activeTab, setActiveTab,
       {activeTab === "cooldowns" && <CooldownsTab analysis={a} spellMeta={spellMeta} />}
       {activeTab === "damage" && !analysis.isHealer && <DamageTab analysis={a} spellMeta={spellMeta} />}
       {activeTab === "healing" && analysis.isHealer && <HealingTab analysis={a} spellMeta={spellMeta} />}
-      {activeTab === "resources" && <ResourcesTab analysis={a} />}
     </div>
   );
 }
@@ -984,6 +961,27 @@ function SuggestionsTab({ analysis, spellMeta }: { analysis: FullAnalysis; spell
 
 const SLOT_NAMES = ["머리", "목", "어깨", "셔츠", "가슴", "허리", "다리", "발", "손목", "장갑", "손가락1", "손가락2", "장신구1", "장신구2", "등", "주무기", "보조무기"];
 const QUALITY_COLORS: Record<number, string> = { 1: "#fff", 2: "#1eff00", 3: "#0070dd", 4: "#a335ee", 5: "#ff8000", 6: "#e6cc80" };
+
+// 외부 딜 증가 버프 — 상위권 비교 시 핵심 지표
+// WCL 응답 이름은 보통 영문. spell ID로도 매칭.
+const EXTERNAL_BUFFS: Array<{ ids: number[]; nameRegex: RegExp; label: string; short: string; color: string }> = [
+  { ids: [10060], nameRegex: /^power infusion$|^마력 주입$/i, label: "마력 주입", short: "마주", color: "#ec4899" },
+  { ids: [395152], nameRegex: /^ebon might$|^흑요석 위세$/i, label: "흑요석 위세", short: "칠흑", color: "#f59e0b" },
+  { ids: [410089], nameRegex: /^prescience$|^예지$/i, label: "예지", short: "예지", color: "#22d3ee" },
+];
+
+// 소모품 분류 — CombatantInfo.auras 이름 패턴
+const CONSUMABLE_CATEGORIES: Array<{ label: string; test: (name: string) => boolean }> = [
+  { label: "음식",       test: (n) => /well fed|식사|진수성찬/i.test(n) },
+  { label: "플라스크",   test: (n) => /^phial\b|^flask\b|^영약|^엘릭서/i.test(n) },
+  { label: "기름/돌",    test: (n) => /\boil\b|\bstone\b|whetstone|부싯돌|숫돌/i.test(n) },
+  { label: "증강 룬",    test: (n) => /augment rune|draconic augment|증강 룬/i.test(n) },
+];
+
+function classifyConsumable(name: string): string | null {
+  for (const c of CONSUMABLE_CATEGORIES) if (c.test(name)) return c.label;
+  return null;
+}
 
 function GearTab({ analysis, rankings, refSpec, statScan, setStatScan, statScanLoading, setStatScanLoading, statScanProgress, setStatScanProgress, setError }: {
   analysis: FullAnalysis;
@@ -1089,7 +1087,10 @@ function GearTab({ analysis, rankings, refSpec, statScan, setStatScan, statScanL
       {/* 스탯 비교 */}
       {mainStats.length > 0 && (
         <div className="wcl-card p-4">
-          <h3 className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">스탯 비교</h3>
+          <h3 className="text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">스탯 비교</h3>
+          <p className="text-[10px] text-gray-600 mb-3">
+            * 전투 시작 시점 스냅샷 — 음식/플라스크/웨폰오일 및 pull 직전 걸린 외부 버프(마주·칠흑 등) 포함. 전투 중간에 발동된 본인 쿨기는 미포함.
+          </p>
           <div className="wcl-table rounded">
             <div className="wcl-table-header grid grid-cols-[1fr_90px_90px_80px] px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
               <div>스탯</div><div className="text-right">나</div><div className="text-right">상대</div><div className="text-right">차이</div>
@@ -1119,6 +1120,98 @@ function GearTab({ analysis, rankings, refSpec, statScan, setStatScan, statScanL
           스탯 데이터 없음. 콘솔에서 [getCombatantInfo] stats 로그를 확인하세요.
         </div>
       )}
+
+      {/* 활성 소모품 (전투 시작 시점 활성 오라에서 음식/플라스크/기름/룬 필터) */}
+      {(() => {
+        const myC = g.myAuras.map(a => ({ ...a, cat: classifyConsumable(a.name) })).filter(a => a.cat);
+        const refC = g.refAuras.map(a => ({ ...a, cat: classifyConsumable(a.name) })).filter(a => a.cat);
+        if (myC.length === 0 && refC.length === 0) return null;
+        const renderList = (items: typeof myC) => (
+          <div className="space-y-1">
+            {CONSUMABLE_CATEGORIES.map(cat => {
+              const entries = items.filter(i => i.cat === cat.label);
+              if (entries.length === 0) return (
+                <div key={cat.label} className="flex items-center gap-2 text-[10px]">
+                  <span className="text-gray-600 w-14">{cat.label}</span>
+                  <span className="text-gray-700">미사용</span>
+                </div>
+              );
+              return entries.map((e, i) => (
+                <div key={`${cat.label}-${i}`} className="flex items-center gap-2 text-[11px]">
+                  <span className="text-gray-500 w-14">{cat.label}</span>
+                  {e.icon && <img src={`${ICON_BASE}/${e.icon.replace(/\.jpg$/, "")}.jpg`} alt="" className="w-4 h-4 rounded-sm" onError={ev => (ev.currentTarget.style.display = "none")} />}
+                  <span className="text-gray-200 truncate">{e.name}</span>
+                </div>
+              ));
+            })}
+          </div>
+        );
+        return (
+          <div className="wcl-card p-4">
+            <h3 className="text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">활성 소모품</h3>
+            <p className="text-[10px] text-gray-600 mb-3">전투 시작 시 활성화된 오라에서 필터 (이름 패턴 기반)</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="text-[10px] font-semibold mb-1" style={{ color: "#a78bfa" }}>나</div>
+                {renderList(myC)}
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold mb-1" style={{ color: "#fbbf24" }}>상대</div>
+                {renderList(refC)}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 외부 버프 Uptime (마주/칠흑/예지 등) */}
+      {(() => {
+        const findAura = (auras: typeof analysis.myAuras, cfg: typeof EXTERNAL_BUFFS[number]) =>
+          auras.find(a => cfg.ids.includes(a.spellId) || cfg.nameRegex.test(a.name));
+        const rows = EXTERNAL_BUFFS.map(cfg => ({
+          cfg,
+          my: findAura(analysis.myAuras, cfg),
+          ref: findAura(analysis.refAuras, cfg),
+        })).filter(r => r.my || r.ref);
+        if (rows.length === 0) return null;
+        return (
+          <div className="wcl-card p-4">
+            <h3 className="text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">외부 버프 가동률</h3>
+            <p className="text-[10px] text-gray-600 mb-3">상위권 비교 시 핵심 지표. 전투 전체 기준 uptime.</p>
+            <div className="space-y-2">
+              {rows.map(({ cfg, my, ref }) => {
+                const myUp = my?.uptimePercent ?? 0;
+                const refUp = ref?.uptimePercent ?? 0;
+                const myCount = my?.windows.length ?? 0;
+                const refCount = ref?.windows.length ?? 0;
+                return (
+                  <div key={cfg.label} className="grid grid-cols-[80px_1fr_1fr] gap-3 items-center">
+                    <span className="text-[11px] font-semibold" style={{ color: cfg.color }}>{cfg.label}</span>
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] mb-0.5">
+                        <span className="text-gray-400">나</span>
+                        <span className="text-white font-mono">{myUp}% <span className="text-gray-500">({myCount}회)</span></span>
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#0d0d15" }}>
+                        <div className="h-full rounded-full" style={{ width: `${myUp}%`, background: cfg.color }} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] mb-0.5">
+                        <span className="text-gray-400">상대</span>
+                        <span className="text-white font-mono">{refUp}% <span className="text-gray-500">({refCount}회)</span></span>
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#0d0d15" }}>
+                        <div className="h-full rounded-full" style={{ width: `${refUp}%`, background: cfg.color, opacity: 0.6 }} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 장비 리스트 — Wowhead 툴팁 연동 */}
       <div className="wcl-card p-4">
@@ -1299,19 +1392,27 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
               style={view === key ? { background: "#1c1c30" } : {}}>{label}</button>
           ))}
         </div>
-        <div className="flex items-center gap-2 text-[10px] text-gray-500">
+        <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
           <button onClick={() => setShowAuras(!showAuras)}
-            className={`px-2 py-0.5 rounded ${showAuras ? "text-white" : "text-gray-600"}`}
-            style={showAuras ? { background: "#1c1c30" } : {}}>오라 {showAuras ? "ON" : "OFF"}</button>
+            className="text-[11px] px-3 py-1 rounded font-semibold transition-all hover:brightness-110"
+            style={showAuras
+              ? { background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }
+              : { background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}>
+            오라 {showAuras ? "ON" : "OFF"}
+          </button>
           {auraFilter.size > 0 && (
             <>
               <button onClick={() => setAuraHideUnselected(!auraHideUnselected)}
-                className={`px-2 py-0.5 rounded ${auraHideUnselected ? "text-white" : "text-gray-600"}`}
-                style={auraHideUnselected ? { background: "#1c1c30" } : {}}>
+                className="text-[11px] px-3 py-1 rounded font-semibold transition-all hover:brightness-110"
+                style={auraHideUnselected
+                  ? { background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }
+                  : { background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}>
                 선택만 보기
               </button>
               <button onClick={() => { setAuraFilter(new Set()); setAuraHideUnselected(false); }}
-                className="text-[9px] text-gray-600 hover:text-white">초기화</button>
+                className="text-[10px] px-2 py-1 rounded text-gray-500 hover:text-white hover:bg-[#1c1c30] transition-colors">
+                초기화
+              </button>
             </>
           )}
           <span className="font-mono">{Math.round(scrollRange.start)}s ~ {Math.round(scrollRange.end)}s</span>
@@ -2184,35 +2285,6 @@ function DpsTimeline({ analysis }: { analysis: FullAnalysis }) {
           ))}
         </div>
       </div>
-    </div>
-  );
-}
-
-// ============================================
-// 탭: 자원
-// ============================================
-
-function ResourcesTab({ analysis }: { analysis: FullAnalysis }) {
-  const r = analysis.resources;
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard label={`${r.resourceType} 낭비율`} value={`${r.wastePercent}%`}
-          color={r.wastePercent > 15 ? "#ef4444" : r.wastePercent > 5 ? "#f59e0b" : "#4ade80"} />
-        <StatCard label="상대 낭비율" value={`${r.refWastePercent}%`} color="#fbbf24" />
-        <StatCard label="만땅 구간" value={`${r.cappedMoments.length}회`} color={r.cappedMoments.length > 5 ? "#ef4444" : "#4ade80"} />
-      </div>
-      {r.cappedMoments.length > 0 && (
-        <div className="wcl-table rounded">
-          <div className="wcl-table-header px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">자원 만땅 구간</div>
-          {r.cappedMoments.slice(0, 20).map((m, i) => (
-            <div key={i} className="px-3 py-2 text-xs flex gap-4" style={{ borderBottom: "1px solid #16162a" }}>
-              <span className="text-gray-400 font-mono">{m.timestamp.toFixed(1)}s</span>
-              <span className="text-yellow-400 font-mono">{m.duration.toFixed(1)}초 동안 캡</span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
