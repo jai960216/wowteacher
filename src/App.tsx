@@ -1480,6 +1480,8 @@ function GearItemCell({ item, ilvlDiff = 0 }: { item: GearItem | undefined; ilvl
 function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMeta: Record<number, SpellMeta> }) {
   const [view, setView] = useState<"my" | "ref" | "both">("both");
   const [scrollRange, setScrollRange] = useState({ start: 0, end: 60 });
+  // 현재 선택된 시간 범위 라벨 — 사용자가 버튼 클릭으로만 변경. 드래그로 안 바뀜.
+  const [selectedRangeLabel, setSelectedRangeLabel] = useState<string>("60초");
   const [showAuras, setShowAuras] = useState(true);
   const [auraFilter, setAuraFilter] = useState<Set<number>>(new Set());
   const [auraHideUnselected, setAuraHideUnselected] = useState(false);
@@ -1675,11 +1677,14 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
               { val: 120, label: "2분" },
               { val: Math.ceil(duration), label: "전체" },
             ].map(opt => {
-              // 부동소수점 오차(drag 중 rangeLen이 60.00000001 같은 값이 됨) 무시
-              const active = Math.abs(rangeLen - opt.val) < 0.5;
+              // 라벨 기반 active — 드래그로 rangeLen 흔들려도 선택 유지
+              const active = selectedRangeLabel === opt.label;
               return (
                 <button key={opt.label}
-                  onClick={() => setScrollRange(prev => ({ start: prev.start, end: Math.min(prev.start + opt.val, duration) }))}
+                  onClick={() => {
+                    setSelectedRangeLabel(opt.label);
+                    setScrollRange(prev => ({ start: prev.start, end: Math.min(prev.start + opt.val, duration) }));
+                  }}
                   className="text-[11px] px-2 py-1 rounded font-semibold transition hover:brightness-125"
                   style={active
                     ? { background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }
