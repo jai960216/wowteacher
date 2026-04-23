@@ -1115,14 +1115,20 @@ function ConsumablesSection({ myAuras, refAuras, myGear, refGear }: {
   const myC = classify(myAuras);
   const refC = classify(refAuras);
 
-  // 무기 강화(오일/돌)는 gear의 temporaryEnchant로 판정. 주무기(15) 또는 보조무기(16) 중 하나에 있으면 O.
+  // enchant DB index → 이름 매핑. Wowhead 미등록 Midnight 신규 enchant는 여기 하드코딩.
+  const WEAPON_ENCHANT_NAMES: Record<number, string> = {
+    8051: "Thalassian Phoenix Oil",
+    8052: "Thalassian Phoenix Oil",
+  };
+
+  // 무기 강화(오일/돌)는 gear의 temporaryEnchant로 판정. 주무기(15)/보조무기(16) dedup.
   const weaponEnchantIDs = (gear: GearItem[]): number[] => {
-    const ids: number[] = [];
+    const ids = new Set<number>();
     const main = gear[15]?.temporaryEnchant ?? 0;
     const off = gear[16]?.temporaryEnchant ?? 0;
-    if (main > 0) ids.push(main);
-    if (off > 0) ids.push(off);
-    return ids;
+    if (main > 0) ids.add(main);
+    if (off > 0) ids.add(off);
+    return [...ids];
   };
   const myWeaponEnchants = weaponEnchantIDs(myGear);
   const refWeaponEnchants = weaponEnchantIDs(refGear);
@@ -1148,9 +1154,20 @@ function ConsumablesSection({ myAuras, refAuras, myGear, refGear }: {
       {/* 무기 강화 별도 행 — gear enchant 기반 */}
       <div className="flex items-center gap-2 text-[11px]">
         <span className="text-gray-500 w-14">무기 강화</span>
-        {enchants.length > 0
-          ? <span className="text-gray-200 font-mono">{enchants.map(id => `#${id}`).join(", ")}</span>
-          : <span className="text-gray-700 text-[10px]">미사용</span>}
+        {enchants.length > 0 ? (
+          <span className="text-gray-200 truncate">
+            {enchants.map((id, i) => {
+              const name = WEAPON_ENCHANT_NAMES[id];
+              return (
+                <span key={id}>
+                  {i > 0 && ", "}
+                  {name ?? <span className="text-gray-400">미확인</span>}
+                  <span className="text-gray-600 text-[9px] ml-1">(#{id})</span>
+                </span>
+              );
+            })}
+          </span>
+        ) : <span className="text-gray-700 text-[10px]">미사용</span>}
       </div>
     </div>
   );
