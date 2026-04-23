@@ -1488,18 +1488,20 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
   const duration = Math.max(analysis.fightDuration.my, analysis.fightDuration.ref);
   const rangeLen = scrollRange.end - scrollRange.start;
 
-  // 마우스 휠 + 터치 스와이프로 시간 스크롤
+  // 마우스 휠 + 터치 스와이프 + 마우스 드래그(클릭 유지)로 시간 스크롤
   useEffect(() => {
     const el = chartRef.current;
     if (!el) return;
+    const applyDelta = (deltaSec: number) => {
+      setScrollRange(prev => {
+        const newStart = Math.max(0, Math.min(duration - rangeLen, prev.start + deltaSec));
+        return { start: newStart, end: newStart + rangeLen };
+      });
+    };
     const wheelHandler = (e: WheelEvent) => {
       e.preventDefault();
       const step = rangeLen * 0.15; // 범위의 15%씩 이동
-      const delta = e.deltaY > 0 ? step : -step;
-      setScrollRange(prev => {
-        const newStart = Math.max(0, Math.min(duration - rangeLen, prev.start + delta));
-        return { start: newStart, end: newStart + rangeLen };
-      });
+      applyDelta(e.deltaY > 0 ? step : -step);
     };
     let prevX = 0;
     const touchStart = (e: TouchEvent) => {
@@ -1513,19 +1515,53 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       if (Math.abs(dx) < 1) return;
       e.preventDefault();
       const width = el.clientWidth || 1;
-      const step = (dx / width) * rangeLen;
-      setScrollRange(prev => {
-        const newStart = Math.max(0, Math.min(duration - rangeLen, prev.start + step));
-        return { start: newStart, end: newStart + rangeLen };
-      });
+      applyDelta((dx / width) * rangeLen);
+    };
+    // 마우스 드래그(잡고 옮기기) — pointer 이벤트로 좌클릭 유지 중 좌우 이동 시 scrollRange 변경
+    let dragging = false;
+    let dragPrevX = 0;
+    const pointerDown = (e: PointerEvent) => {
+      // 버튼·링크 같은 interactive 자식 위에선 드래그 시작 안 함 (click 충돌 방지)
+      const target = e.target as HTMLElement;
+      if (target.closest("a, button, select, input")) return;
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      if (e.pointerType === "touch") return; // touchmove가 처리
+      dragging = true;
+      dragPrevX = e.clientX;
+      el.setPointerCapture(e.pointerId);
+      el.style.cursor = "grabbing";
+    };
+    const pointerMove = (e: PointerEvent) => {
+      if (!dragging) return;
+      const curX = e.clientX;
+      const dx = dragPrevX - curX;
+      dragPrevX = curX;
+      if (Math.abs(dx) < 1) return;
+      const width = el.clientWidth || 1;
+      applyDelta((dx / width) * rangeLen);
+    };
+    const pointerEnd = (e: PointerEvent) => {
+      if (!dragging) return;
+      dragging = false;
+      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+      el.style.cursor = "grab";
     };
     el.addEventListener("wheel", wheelHandler, { passive: false });
     el.addEventListener("touchstart", touchStart, { passive: true });
     el.addEventListener("touchmove", touchMove, { passive: false });
+    el.addEventListener("pointerdown", pointerDown);
+    el.addEventListener("pointermove", pointerMove);
+    el.addEventListener("pointerup", pointerEnd);
+    el.addEventListener("pointercancel", pointerEnd);
+    el.style.cursor = "grab";
     return () => {
       el.removeEventListener("wheel", wheelHandler);
       el.removeEventListener("touchstart", touchStart);
       el.removeEventListener("touchmove", touchMove);
+      el.removeEventListener("pointerdown", pointerDown);
+      el.removeEventListener("pointermove", pointerMove);
+      el.removeEventListener("pointerup", pointerEnd);
+      el.removeEventListener("pointercancel", pointerEnd);
     };
   }, [rangeLen, duration]);
 
@@ -1558,16 +1594,21 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
     <div>
       {/* 컨트롤 */}
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <div className="flex gap-1">
+        {/* 보기 전환 (나/상대/동시 비교) — 세그먼트 컨테이너 */}
+        <div className="flex gap-0.5 p-0.5 rounded" style={{ background: "#131320", border: "1px solid #1c1c30" }}>
           {([["my", "나"], ["ref", "상대"], ["both", "동시 비교"]] as const).map(([key, label]) => (
             <button key={key} onClick={() => setView(key)}
-              className={`text-[10px] px-3 py-1 rounded font-semibold ${view === key ? "text-white" : "text-gray-600"}`}
-              style={view === key ? { background: "#1c1c30" } : {}}>{label}</button>
+              className="text-[11px] px-3 py-1 rounded font-semibold transition hover:brightness-125"
+              style={view === key
+                ? { background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }
+                : { background: "transparent", color: "#d1d5db" }}>
+              {label}
+            </button>
           ))}
         </div>
-        <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => setShowAuras(!showAuras)}
-            className="text-[11px] px-3 py-1 rounded font-semibold transition-all hover:brightness-110"
+            className="text-[11px] px-3 py-1 rounded font-semibold transition hover:brightness-125"
             style={showAuras
               ? { background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }
               : { background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}>
@@ -1576,23 +1617,27 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
           {auraFilter.size > 0 && (
             <>
               <button onClick={() => setAuraHideUnselected(!auraHideUnselected)}
-                className="text-[11px] px-3 py-1 rounded font-semibold transition-all hover:brightness-110"
+                className="text-[11px] px-3 py-1 rounded font-semibold transition hover:brightness-125"
                 style={auraHideUnselected
                   ? { background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }
                   : { background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}>
                 선택만 보기
               </button>
               <button onClick={() => { setAuraFilter(new Set()); setAuraHideUnselected(false); }}
-                className="text-[10px] px-2 py-1 rounded text-gray-500 hover:text-white hover:bg-[#1c1c30] transition-colors">
+                className="text-[11px] px-2 py-1 rounded text-gray-400 hover:text-white hover:bg-[#1c1c30] transition">
                 초기화
               </button>
             </>
           )}
-          <span className="font-mono">{Math.round(scrollRange.start)}s ~ {Math.round(scrollRange.end)}s</span>
+          {/* 현재 시간 범위 — 보라 강조로 가독성 ↑ */}
+          <span className="font-mono text-[11px] font-semibold px-2 py-1 rounded" style={{ color: "#a78bfa", background: "#1c1c30", border: "1px solid #2a2a40" }}>
+            {Math.round(scrollRange.start)}s ~ {Math.round(scrollRange.end)}s
+          </span>
           <select value={rangeLen} onChange={e => {
             const len = Number(e.target.value);
             setScrollRange(prev => ({ start: prev.start, end: Math.min(prev.start + len, duration) }));
-          }} className="text-[10px] bg-transparent text-gray-400 border border-gray-700 rounded px-1 py-0.5">
+          }} className="text-[11px] font-semibold rounded px-2 py-1 cursor-pointer"
+            style={{ background: "#1c1c30", color: "#d1d5db", border: "1px solid #2a2a40" }}>
             <option value={5}>5초</option>
             <option value={10}>10초</option>
             <option value={30}>30초</option>
@@ -1600,7 +1645,7 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
             <option value={120}>2분</option>
             <option value={Math.ceil(duration)}>전체</option>
           </select>
-          <span className="text-[9px] text-gray-700">휠/터치 스크롤</span>
+          <span className="text-[10px] text-gray-500 hidden sm:inline">드래그 · 휠 · 터치 스크롤</span>
         </div>
       </div>
 
