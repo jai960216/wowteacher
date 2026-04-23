@@ -1188,13 +1188,29 @@ function ExternalBuffsSection({ myAuras, refAuras }: {
   myAuras: AuraInfo[];
   refAuras: AuraInfo[];
 }) {
-  // 받았는지 여부만 체크. uptime/count 같은 디테일 제거.
+  const [showDiag, setShowDiag] = useState(false);
   const got = (auras: AuraInfo[], cfg: typeof EXTERNAL_BUFFS[number]) =>
     auras.some(a => cfg.ids.includes(a.spellId) || cfg.nameKeywords.test(a.name));
 
+  // 진단용 — 감지된 전체 aura 콘솔 덤프. 외부 버프 미감지 시 실데이터로 원인 확인.
+  useEffect(() => {
+    const fmt = (auras: AuraInfo[]) => [...auras]
+      .sort((a, b) => b.uptimePercent - a.uptimePercent)
+      .map(a => `${a.name}(#${a.spellId}) ${a.uptimePercent}%`).join(" | ");
+    console.log(`[refAuras] ${refAuras.length}종:`, fmt(refAuras));
+    console.log(`[myAuras] ${myAuras.length}종:`, fmt(myAuras));
+  }, [myAuras, refAuras]);
+
   return (
     <div className="wcl-card p-4">
-      <h3 className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">외부 버프 수령</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">외부 버프 수령</h3>
+        <button onClick={() => setShowDiag(s => !s)}
+          className="text-[10px] px-2 py-0.5 rounded hover:brightness-125"
+          style={{ background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}>
+          진단 {showDiag ? "▲" : "▼"}
+        </button>
+      </div>
       <div className="grid grid-cols-[100px_60px_60px] gap-3 items-center text-[11px]">
         <div />
         <div className="text-center text-gray-500">나</div>
@@ -1210,6 +1226,36 @@ function ExternalBuffsSection({ myAuras, refAuras }: {
             </Fragment>
           );
         })}
+      </div>
+      {showDiag && (
+        <div className="mt-4 pt-3" style={{ borderTop: "1px solid #1c1c30" }}>
+          <div className="text-[10px] text-gray-500 mb-2">
+            실제 감지된 aura (uptime 내림차순). 외부 버프가 X로 떴는데 여기 이름이 있으면 spell ID 알려주세요.
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <DiagAuraList label="나" auras={myAuras} />
+            <DiagAuraList label="상대" auras={refAuras} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiagAuraList({ label, auras }: { label: string; auras: AuraInfo[] }) {
+  const sorted = [...auras].filter(a => a.uptimePercent >= 5).sort((a, b) => b.uptimePercent - a.uptimePercent);
+  return (
+    <div>
+      <div className="text-[10px] font-semibold mb-1" style={{ color: label === "나" ? "#a78bfa" : "#fbbf24" }}>{label} ({auras.length}종)</div>
+      <div className="space-y-0.5 max-h-80 overflow-y-auto pr-1">
+        {sorted.length === 0 && <div className="text-[10px] text-gray-700">없음</div>}
+        {sorted.map(a => (
+          <div key={a.spellId} className="flex items-center gap-1.5 text-[10px]">
+            <span className="text-gray-300 truncate flex-1" title={`#${a.spellId}`}>{a.name}</span>
+            <span className="text-gray-600 font-mono text-[9px]">#{a.spellId}</span>
+            <span className="text-gray-500 font-mono w-10 text-right">{a.uptimePercent}%</span>
+          </div>
+        ))}
       </div>
     </div>
   );
