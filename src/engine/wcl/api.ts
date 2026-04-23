@@ -1392,6 +1392,17 @@ async function fetchCombatantInfo(
 
   // talent entry ID는 WCL 내부 전용 — 외부 API로 spell ID 변환 불가
 
+  // 진단용 — 첫 event의 모든 top-level 키 + hero 관련 값 dump (영웅특성 경로 탐색)
+  if (events.length > 0) {
+    const e = events[0];
+    const keys = Object.keys(e).sort();
+    const heroLike = Object.entries(e)
+      .filter(([k]) => /hero|tree|subtree|custom|talent/i.test(k))
+      .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v).slice(0, 300) : String(v).slice(0, 120)}`);
+    console.log(`[getCombatantInfo] ${reportCode} sourceID=${e.sourceID} keys:`, keys.join(", "));
+    console.log(`[getCombatantInfo] hero 관련 필드:`, heroLike.join(" | "));
+  }
+
   return events.map((e: any) => {
     // 장비 — icon에 .jpg 포함됨, 제거해서 저장
     const gear = (e.gear ?? []).map((g: any, idx: number) => ({
