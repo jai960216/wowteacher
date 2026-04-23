@@ -429,6 +429,115 @@ export async function getBuffsTable(
   return mapped;
 }
 
+/**
+ * 특정 플레이어가 외부에서 받은 특정 buff들의 정확한 apply 횟수·uptime.
+ * `table(dataType: Buffs)`는 외부 시전 buff 일부를 집계 누락하는 알려진 WCL 버그가 있어서
+ * events 원본 이벤트 스트림에 filterExpression으로 관심 ID만 명시해 받음.
+ * applybuff 카운트 = 받은 횟수, apply~remove 구간 합산 = uptime.
+ */
+export async function getExternalBuffEvents(
+  reportCode: string,
+  targetId: number,
+  startTime: number,
+  endTime: number,
+  spellIds: number[],
+): Promise<Array<{ spellId: number; applyCount: number; uptimePercent: number }>> {
+  const validIds = spellIds.filter(n => Number.isFinite(n) && n > 0);
+  if (validIds.length === 0) return [];
+  const filter = `ability.id in (${validIds.join(", ")})`;
+
+  const allEvents: any[] = [];
+  let currentStart = startTime;
+  // 페이지네이션 진행 감시 — nextPageTimestamp가 진행 안 하거나 역행하면 무한 루프 방지.
+  let prevStart = -1;
+  const MAX_PAGES = 20;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const data: any = await query<any>(`
+      query ($code: String!, $startTime: Float!, $endTime: Float!, $targetID: Int!, $filter: String!) {
+        reportData {
+          report(code: $code) {
+            events(
+              dataType: Buffs
+              hostilityType: Friendlies
+              startTime: $startTime
+              endTime: $endTime
+              targetID: $targetID
+              filterExpression: $filter
+              limit: 10000
+            ) {
+              data
+              nextPageTimestamp
+            }
+          }
+        }
+      }
+    `, {
+      code: reportCode,
+      startTime: currentStart,
+      endTime,
+      targetID: targetId,
+      filter,
+    });
+    const events = data.reportData?.report?.events;
+    if (!events) break;
+    allEvents.push(...(events.data ?? []));
+    const next = events.nextPageTimestamp ?? 0;
+    if (next <= 0 || next <= prevStart) break;
+    prevStart = currentStart;
+    currentStart = next;
+  }
+
+  // 페이지 경계에서 timestamp 비단조 가능성 — state machine 돌리기 전 정렬 보장.
+  allEvents.sort((a: any, b: any) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+
+  const duration = endTime - startTime;
+  type Acc = { applies: number; active: boolean; activeStart: number; uptime: number };
+  const bySpell: Record<number, Acc> = {};
+  for (const id of validIds) bySpell[id] = { applies: 0, active: false, activeStart: 0, uptime: 0 };
+
+  for (const e of allEvents) {
+    const sid: number | null = e.abilityGameID ?? null;
+    if (sid === null) continue;
+    const s = bySpell[sid];
+    if (!s) continue;
+    if (e.type === "applybuff") {
+      s.applies += 1;
+      if (!s.active) { s.active = true; s.activeStart = e.timestamp; }
+    } else if (e.type === "refreshbuff") {
+      if (!s.active) { s.active = true; s.activeStart = e.timestamp; }
+    } else if (e.type === "removebuff") {
+      if (s.active) {
+        const delta = e.timestamp - s.activeStart;
+        if (delta > 0) s.uptime += delta;
+        s.active = false;
+      }
+    }
+  }
+  // 전투 끝까지 active인 채로 남은 경우 fight 종료까지 연장
+  for (const id of validIds) {
+    const s = bySpell[id];
+    if (s.active) {
+      const delta = endTime - s.activeStart;
+      if (delta > 0) s.uptime += delta;
+    }
+  }
+
+  const results = validIds.map(id => {
+    const s = bySpell[id];
+    return {
+      spellId: id,
+      applyCount: s.applies,
+      uptimePercent: duration > 0 ? Math.round((s.uptime / duration) * 1000) / 10 : 0,
+    };
+  });
+  const hit = results.filter(r => r.applyCount > 0);
+  console.log(
+    `[getExternalBuffEvents] target=${targetId}:`,
+    hit.length > 0 ? hit.map(r => `#${r.spellId} ${r.applyCount}회 ${r.uptimePercent}%`).join(" | ") : "없음",
+  );
+  return results;
+}
+
 export async function getBuffs(
   reportCode: string,
   _fightId: number,

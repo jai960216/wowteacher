@@ -3,7 +3,7 @@ import { isAuthenticated, startAuth, handleCallback, logout } from "./engine/wcl
 import { subscribeRateLimit, getRateLimitSnapshot } from "./engine/wcl/rateLimit";
 import {
   getMyCharacters, searchCharacter, getReportInfo, getEncounterRankings, getFightPlayerIds, getMyEncounterRankings,
-  getFightTime, getBuffsTable, EXTERNAL_KEYWORD_RE,
+  getFightTime, getBuffsTable, getExternalBuffEvents, EXTERNAL_KEYWORD_RE,
   CLASS_NAMES_KR, CLASS_COLORS, DIFFICULTY_NAMES, DIFFICULTY_COLORS,
   getClassIconUrl, getPercentileColor,
   type WCLReportInfo, type WCLRanking, type WCLFight, type ZoneRankingData,
@@ -635,15 +635,41 @@ function RankingsView({ rankings, selectedFight, cName, classID, className, metr
         report.players.find(p => norm(p.name) === rName && norm(p.server ?? "") === rServer)
         ?? report.players.find(p => norm(p.name) === rName);
       if (!player) throw new Error(`${r.name} 플레이어를 리포트에서 찾을 수 없음`);
-      const table = await getBuffsTable(r.reportCode, player.id, fight.startTime, fight.endTime);
+      // table(Buffs)는 외부 시전 buff 집계 누락 (WCL 알려진 이슈). events로 보정.
+      // 관심 ID들(EXTERNAL_BUFFS.ids 평탄화)을 filterExpression으로 명시 쿼리 → applybuff 카운트 정확.
+      const externalIds = [...new Set(EXTERNAL_BUFFS.flatMap(c => c.ids))];
+      const [table, eventResults] = await Promise.all([
+        getBuffsTable(r.reportCode, player.id, fight.startTime, fight.endTime),
+        getExternalBuffEvents(r.reportCode, player.id, fight.startTime, fight.endTime, externalIds),
+      ]);
+      const eventMap = new Map(eventResults.map(e => [e.spellId, e]));
+
       const matchedIds = new Set<number>();
       const ext = EXTERNAL_BUFFS.map(cfg => {
-        const hit = table.find(b => cfg.ids.includes(b.spellId) || cfg.nameKeywords.test(b.name));
-        if (hit) matchedIds.add(hit.spellId);
-        return { cfg, count: hit?.totalUses ?? 0, uptimePercent: hit?.uptimePercent ?? 0 };
+        // 1차: events 결과(ID 명시 쿼리) — 외부 시전 buff 정확 카운트.
+        // 같은 cfg에 구·신 ID가 공존(예: PI 37274/10060) — 둘 다 hit하면 count는 합산,
+        // uptime은 overlap 가능성으로 합치면 100% 초과 위험이라 max 유지(실제로는 한쪽만 잡힘).
+        let count = 0, uptimePercent = 0;
+        for (const id of cfg.ids) {
+          const ev = eventMap.get(id);
+          if (ev && ev.applyCount > 0) {
+            count += ev.applyCount;
+            uptimePercent = Math.max(uptimePercent, ev.uptimePercent);
+            matchedIds.add(id);
+          }
+        }
+        // 2차 fallback: table (name 매칭으로 구버전 ID/변종 감지)
+        if (count === 0) {
+          const hit = table.find(b => cfg.ids.includes(b.spellId) || cfg.nameKeywords.test(b.name));
+          if (hit) {
+            count = hit.totalUses;
+            uptimePercent = hit.uptimePercent;
+            matchedIds.add(hit.spellId);
+          }
+        }
+        return { cfg, count, uptimePercent };
       });
-      // 후보: PI/EM/Presc 키워드 hit 했으나 이미 매칭된 항목은 제외.
-      // 매칭 실패로 UI "미수령"이 떠도 이름상 후보인 건 별도 노출해야 진단 가능.
+      // 후보: table에서 키워드 hit했으나 아직 매칭 안 된 항목 — 신규 ID 탐지용.
       const candidates = table.filter(b =>
         EXTERNAL_KEYWORD_RE.test(b.name) && !matchedIds.has(b.spellId)
       );
