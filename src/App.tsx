@@ -997,57 +997,42 @@ function GearTab({ analysis, rankings, refSpec, statScan, setStatScan, statScanL
         {statScan && <StatScanResult scan={statScan} />}
       </div>
 
-      {/* 특성·리플레이 — 영웅특성(감지되면) + WCL 외부 링크 */}
+      {/* 특성 — 영웅특성(감지되면) + WCL 빌드 외부 링크 버튼 */}
       <div className="wcl-card p-4">
-        <h3 className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">특성·리플레이</h3>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-base">📜</span>
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider">특성 빌드</h3>
+        </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <div className="text-[10px] text-gray-600 mb-1">나</div>
-            {g.myHeroTree && <div className="text-sm text-white font-semibold mb-1.5">{heroTalentNameKr(g.myHeroTree)}</div>}
-            <div className="flex flex-col gap-1">
-              <a
-                href={`https://ko.warcraftlogs.com/reports/${analysis.myReportCode}?fight=${analysis.myFightID}&type=summary&source=${analysis.myPlayerId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block text-[11px] underline w-fit"
-                style={{ color: "#a78bfa" }}
-              >
-                특성 빌드 보기 ↗
-              </a>
-              <a
-                href={`https://ko.warcraftlogs.com/reports/${analysis.myReportCode}?fight=${analysis.myFightID}&type=replay&source=${analysis.myPlayerId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block text-[11px] underline w-fit"
-                style={{ color: "#a78bfa" }}
-              >
-                리플레이 보기 ↗
-              </a>
-            </div>
+            <div className="text-[10px] text-gray-600 mb-1.5">나</div>
+            {g.myHeroTree && <div className="text-sm text-white font-semibold mb-2">{heroTalentNameKr(g.myHeroTree)}</div>}
+            <a
+              href={`https://ko.warcraftlogs.com/reports/${analysis.myReportCode}?fight=${analysis.myFightID}&type=summary&source=${analysis.myPlayerId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition hover:brightness-125"
+              style={{ background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff", boxShadow: "0 0 8px #a855f755" }}
+            >
+              <span>📜</span>
+              <span>특성 빌드 보기</span>
+              <span className="opacity-70">↗</span>
+            </a>
           </div>
           <div>
-            <div className="text-[10px] text-gray-600 mb-1">상대</div>
-            {g.refHeroTree && <div className="text-sm text-white font-semibold mb-1.5">{heroTalentNameKr(g.refHeroTree)}</div>}
-            <div className="flex flex-col gap-1">
-              <a
-                href={`https://ko.warcraftlogs.com/reports/${analysis.refReportCode}?fight=${analysis.refFightID}&type=summary&source=${analysis.refPlayerId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block text-[11px] underline w-fit"
-                style={{ color: "#fbbf24" }}
-              >
-                특성 빌드 보기 ↗
-              </a>
-              <a
-                href={`https://ko.warcraftlogs.com/reports/${analysis.refReportCode}?fight=${analysis.refFightID}&type=replay&source=${analysis.refPlayerId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block text-[11px] underline w-fit"
-                style={{ color: "#fbbf24" }}
-              >
-                리플레이 보기 ↗
-              </a>
-            </div>
+            <div className="text-[10px] text-gray-600 mb-1.5">상대</div>
+            {g.refHeroTree && <div className="text-sm text-white font-semibold mb-2">{heroTalentNameKr(g.refHeroTree)}</div>}
+            <a
+              href={`https://ko.warcraftlogs.com/reports/${analysis.refReportCode}?fight=${analysis.refFightID}&type=summary&source=${analysis.refPlayerId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition hover:brightness-125"
+              style={{ background: "linear-gradient(135deg, #d97706, #fbbf24)", color: "#1a1a1a", boxShadow: "0 0 8px #fbbf2455" }}
+            >
+              <span>📜</span>
+              <span>특성 빌드 보기</span>
+              <span className="opacity-70">↗</span>
+            </a>
           </div>
         </div>
       </div>
@@ -2440,6 +2425,39 @@ function PatternsTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
 
   return (
     <div className="space-y-5">
+      {/* 리플레이 — WCL 전장 재생 외부 링크 */}
+      <div className="wcl-card p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-base">▶️</span>
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider">전투 리플레이</h3>
+        </div>
+        <p className="text-[10px] text-gray-500 mb-3">WCL 사이트의 2D 리플레이로 위치·스킬 타이밍을 재생 확인</p>
+        <div className="grid grid-cols-2 gap-4">
+          <a
+            href={`https://ko.warcraftlogs.com/reports/${analysis.myReportCode}?fight=${analysis.myFightID}&type=replay&source=${analysis.myPlayerId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 px-3 py-2.5 rounded text-xs font-bold transition hover:brightness-125"
+            style={{ background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff", boxShadow: "0 0 8px #a855f755" }}
+          >
+            <span>▶️</span>
+            <span>내 리플레이 보기</span>
+            <span className="opacity-70">↗</span>
+          </a>
+          <a
+            href={`https://ko.warcraftlogs.com/reports/${analysis.refReportCode}?fight=${analysis.refFightID}&type=replay&source=${analysis.refPlayerId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 px-3 py-2.5 rounded text-xs font-bold transition hover:brightness-125"
+            style={{ background: "linear-gradient(135deg, #d97706, #fbbf24)", color: "#1a1a1a", boxShadow: "0 0 8px #fbbf2455" }}
+          >
+            <span>▶️</span>
+            <span>상대 리플레이 보기</span>
+            <span className="opacity-70">↗</span>
+          </a>
+        </div>
+      </div>
+
       {/* 탈태 사용 비교 — 데이터 있을 때만 */}
       {(p.metaUsage.myCount > 0 || p.metaUsage.refCount > 0) && (
         <div className="wcl-card p-4">
