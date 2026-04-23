@@ -48,6 +48,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
   const [step, _setStep] = useState<Step>(isAuthenticated() ? "characters" : "login");
+  const [showDonate, setShowDonate] = useState(false);
   const setStep = (s: Step) => { console.log("[step]", step, "→", s); _setStep(s); };
 
   const [myChars, setMyChars] = useState<MyCharacter[]>([]);
@@ -370,12 +371,50 @@ function App() {
             )}
           </div>
           <div className="flex items-center gap-3 text-xs flex-shrink-0">
+            <button
+              onClick={() => setShowDonate(true)}
+              className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded font-semibold hover:brightness-125 transition"
+              style={{ background: "#f59e0b15", border: "1px solid #f59e0b55", color: "#f59e0b" }}
+              title="토스 송금 QR — 2,000원"
+            >
+              ☕ 커피 한 잔 사주기
+            </button>
             <RateLimitBadge />
             {step !== "characters" && <button onClick={goBack} className="text-gray-500 hover:text-white">&larr; 뒤로</button>}
             <button onClick={() => { logout(); setAuthed(false); setStep("login"); }} className="text-gray-600 hover:text-gray-400">로그아웃</button>
           </div>
         </div>
       </nav>
+
+      {/* 후원 모달 — 토스 송금 QR */}
+      {showDonate && (
+        <div
+          onClick={() => setShowDonate(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.8)" }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="wcl-card p-6 max-w-xs w-full text-center"
+            style={{ background: "#131320", border: "1px solid #2a2a40" }}
+          >
+            <div className="text-lg mb-1">☕</div>
+            <h3 className="text-base font-bold text-white mb-2">커피 한 잔 사주기</h3>
+            <p className="text-[11px] text-gray-400 mb-4 leading-relaxed">
+              wowteacher 유지·개선에 도움이 돼요.<br />
+              아래 QR을 토스 앱으로 스캔하면<br />
+              <span style={{ color: "#f59e0b" }}>2,000원 송금 페이지</span>가 열립니다.
+            </p>
+            <img src="/TossQR.jpg" alt="토스 송금 QR" className="w-full rounded-lg" style={{ background: "#fff", padding: "8px" }} />
+            <button
+              onClick={() => setShowDonate(false)}
+              className="mt-4 text-[11px] text-gray-500 hover:text-white"
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-[1200px] mx-auto px-4 py-5">
         {error && (
