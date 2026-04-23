@@ -1058,11 +1058,22 @@ export async function getEncounterRankings(
 
   // 서버 필터 제거 → 전직업이 응답에 섞여 옴. 클라이언트에서 정규화 비교로 필터링.
   // class 필드 누락은 drop(통과 금지). 서버 필터가 없으므로 fallthrough는 혼합 오염 위험.
+  // 비공개 리포트(hidden=true, name="Anonymous", reportCode="a:..." 접두)는 WCL이 플레이어
+  // 이름을 "Player (id)"로 익명화해서 본인 매칭·buff 조회 불가 → 아예 제외.
+  const isHiddenRank = (r: any): boolean => {
+    if (r?.hidden === true) return true;
+    if (r?.name === "Anonymous") return true;
+    const code = r?.report?.code ?? r?.reportCode ?? "";
+    if (typeof code === "string" && code.startsWith("a:")) return true;
+    return false;
+  };
   let filtered = rankings;
   let droppedUnknown = 0;
+  let droppedHidden = 0;
   if (className) {
     const target = normalize(className);
     filtered = rankings.filter((r: any) => {
+      if (isHiddenRank(r)) { droppedHidden++; return false; }
       const rClass = extractClassName(r);
       if (!rClass) { droppedUnknown++; return false; }
       return normalize(rClass) === target;
@@ -1071,7 +1082,16 @@ export async function getEncounterRankings(
       "[getEncounterRankings] 클라이언트 필터:", className,
       "| 전체:", rankings.length, "→", filtered.length,
       droppedUnknown > 0 ? `| class 누락 drop=${droppedUnknown}` : "",
+      droppedHidden > 0 ? `| 비공개 drop=${droppedHidden}` : "",
     );
+  } else {
+    filtered = rankings.filter((r: any) => {
+      if (isHiddenRank(r)) { droppedHidden++; return false; }
+      return true;
+    });
+    if (droppedHidden > 0) {
+      console.log(`[getEncounterRankings] 비공개 drop=${droppedHidden}`);
+    }
   }
 
   const mapped: WCLRanking[] = filtered.map((r: any, i: number) => {
