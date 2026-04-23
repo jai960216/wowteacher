@@ -895,8 +895,8 @@ const CONSUMABLE_CATEGORIES: Array<{ label: string; ids: number[]; test: (name: 
   },
   {
     label: "무기 강화",
-    ids: [1269406, 1265808, 1260615, 1264426],
-    test: (n) => /\boil\b|whetstone|sharpening stone|weightstone|\bplume\b|singular focus|기름|숫돌|부싯돌/i.test(n),
+    ids: [1265808, 1260615, 1264426],
+    test: (n) => /\boil\b|whetstone|sharpening stone|weightstone|\bplume\b|기름|숫돌|부싯돌/i.test(n),
   },
   {
     label: "증강 룬",
@@ -1237,9 +1237,6 @@ function ExternalBuffsSection({ myAuras, refAuras, externalBuffsReceived, refRep
               className="underline text-purple-400 hover:text-purple-300">
               WCL Buffs 탭 열기 ↗
             </a>
-          </div>
-          <div className="text-[10px] text-gray-500 mb-2">
-            실제 감지된 aura (uptime 내림차순). 외부 버프가 X로 떴는데 여기 이름이 있으면 spell ID 알려주세요.
           </div>
           <div className="grid grid-cols-2 gap-4">
             <DiagAuraList label="나" auras={myAuras} />
