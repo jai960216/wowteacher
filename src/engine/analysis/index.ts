@@ -39,7 +39,14 @@ export interface AnalysisInput {
 }
 
 export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysis> {
-  // 1) 데이터 수집 (병렬 — 10개 API 호출)
+  console.log(`[analysis] 데이터 수집 시작 (12 쿼리 병렬): my=${input.myReport.code}:${input.myFight.id} ref=${input.refReportCode}:${input.refFight.id}`);
+  // 각 쿼리별 완료 시각 로그 — hang 지점 추적용
+  const track = <T>(label: string, p: Promise<T>): Promise<T> => {
+    const t0 = performance.now();
+    return p.then(v => { console.log(`[analysis] ✓ ${label} (${Math.round(performance.now() - t0)}ms)`); return v; },
+                  e => { console.error(`[analysis] ✗ ${label} 실패:`, e); throw e; });
+  };
+  // 1) 데이터 수집 (병렬 — 12개 API 호출)
   const [
     myCasts, refCasts,
     myBuffs, refBuffs,
@@ -48,19 +55,20 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
     myDmgTable, refDmgTable,
     myCombatantInfos, refCombatantInfos,
   ] = await Promise.all([
-    getCasts(input.myReport.code, input.myFight.id, input.myPlayerId, input.myFight.startTime, input.myFight.endTime),
-    getCasts(input.refReportCode, input.refFight.id, input.refPlayerId, input.refFight.startTime, input.refFight.endTime),
-    getBuffs(input.myReport.code, input.myFight.id, input.myPlayerId, input.myFight.startTime, input.myFight.endTime),
-    getBuffs(input.refReportCode, input.refFight.id, input.refPlayerId, input.refFight.startTime, input.refFight.endTime),
-    getResources(input.myReport.code, input.myFight.id, input.myPlayerId, input.myFight.startTime, input.myFight.endTime),
-    getResources(input.refReportCode, input.refFight.id, input.refPlayerId, input.refFight.startTime, input.refFight.endTime),
-    getDamageDone(input.myReport.code, input.myPlayerId, input.myFight.startTime, input.myFight.endTime),
-    getDamageDone(input.refReportCode, input.refPlayerId, input.refFight.startTime, input.refFight.endTime),
-    getDamageTable(input.myReport.code, input.myPlayerId, input.myFight.startTime, input.myFight.endTime),
-    getDamageTable(input.refReportCode, input.refPlayerId, input.refFight.startTime, input.refFight.endTime),
-    getCombatantInfo(input.myReport.code, input.myFight.startTime, input.myFight.endTime),
-    getCombatantInfo(input.refReportCode, input.refFight.startTime, input.refFight.endTime),
+    track("myCasts", getCasts(input.myReport.code, input.myFight.id, input.myPlayerId, input.myFight.startTime, input.myFight.endTime)),
+    track("refCasts", getCasts(input.refReportCode, input.refFight.id, input.refPlayerId, input.refFight.startTime, input.refFight.endTime)),
+    track("myBuffs", getBuffs(input.myReport.code, input.myFight.id, input.myPlayerId, input.myFight.startTime, input.myFight.endTime)),
+    track("refBuffs", getBuffs(input.refReportCode, input.refFight.id, input.refPlayerId, input.refFight.startTime, input.refFight.endTime)),
+    track("myResources", getResources(input.myReport.code, input.myFight.id, input.myPlayerId, input.myFight.startTime, input.myFight.endTime)),
+    track("refResources", getResources(input.refReportCode, input.refFight.id, input.refPlayerId, input.refFight.startTime, input.refFight.endTime)),
+    track("myDmgEvents", getDamageDone(input.myReport.code, input.myPlayerId, input.myFight.startTime, input.myFight.endTime)),
+    track("refDmgEvents", getDamageDone(input.refReportCode, input.refPlayerId, input.refFight.startTime, input.refFight.endTime)),
+    track("myDmgTable", getDamageTable(input.myReport.code, input.myPlayerId, input.myFight.startTime, input.myFight.endTime)),
+    track("refDmgTable", getDamageTable(input.refReportCode, input.refPlayerId, input.refFight.startTime, input.refFight.endTime)),
+    track("myCombatantInfo", getCombatantInfo(input.myReport.code, input.myFight.startTime, input.myFight.endTime)),
+    track("refCombatantInfo", getCombatantInfo(input.refReportCode, input.refFight.startTime, input.refFight.endTime)),
   ]);
+  console.log("[analysis] 데이터 수집 완료");
 
   // 1-b) 힐러 모드: 힐량 데이터 추가 수집 (4개 쿼리)
   let myHealEvents: WCLHealEvent[] = [];
@@ -152,10 +160,13 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
 
   // 8.6) 외부 버프 수령 여부 계산 — Buffs events + 외부 Cast 이벤트 OR 조합.
   // Buffs events가 누락하는 경우(WCL API 제약) 시전자의 cast 이벤트로 역추정.
+  console.log("[analysis] 외부 Cast 쿼리 시작");
+  const castT0 = performance.now();
   const [myIncomingCasts, refIncomingCasts] = await Promise.all([
     getIncomingCasts(input.myReport.code, input.myPlayerId, input.myFight.startTime, input.myFight.endTime, EXTERNAL_BUFF_SPELL_IDS),
     getIncomingCasts(input.refReportCode, input.refPlayerId, input.refFight.startTime, input.refFight.endTime, EXTERNAL_BUFF_SPELL_IDS),
   ]);
+  console.log(`[analysis] 외부 Cast 쿼리 완료 (${Math.round(performance.now() - castT0)}ms)`);
   const detectedFrom = (auras: typeof myAuras, casts: Array<{ spellId: number; castCount: number }>): Record<string, boolean> => {
     const received: Record<string, boolean> = {};
     for (const cfg of EXTERNAL_BUFFS) received[cfg.label] = false;
