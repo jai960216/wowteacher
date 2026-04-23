@@ -1444,16 +1444,23 @@ async function fetchCombatantInfo(
       }));
     }
 
-    // talentTree에서 영웅특성 트리 이름 찾기
+    // talentTree에서 영웅특성 트리 이름 찾기 — node.name이 이름 문자열일 때만 채택
     if (Array.isArray(e.talentTree)) {
-      // talentTree 구조에서 hero 서브트리 감지
       for (const node of e.talentTree) {
-        if (node.heroTree || node.subTreeID || node.type === "hero") {
-          heroTreeName = node.name ?? node.heroTree ?? "";
+        if ((node.heroTree || node.subTreeID || node.type === "hero") && typeof node.name === "string" && node.name) {
+          heroTreeName = node.name;
           break;
         }
       }
     }
+    // 보조 경로: heroTalents[].name 시그니처로 tree 역추정 (server가 heroTreeName 안 줄 때).
+    if (!heroTreeName && heroTalents.length > 0) {
+      const heroNames = heroTalents.map(h => h.name).filter(Boolean);
+      const detected = detectHeroTalent(heroNames, "");
+      if (detected) heroTreeName = detected;
+    }
+    // 숫자 ID 문자열 방어 — UI에 "12345" 노출 방지
+    if (/^\d+$/.test(heroTreeName.trim())) heroTreeName = "";
 
     return {
       sourceID: e.sourceID ?? 0,

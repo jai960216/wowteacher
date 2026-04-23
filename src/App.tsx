@@ -10,6 +10,7 @@ import {
 import { runFullAnalysis, type FullAnalysis } from "./engine/analysis";
 import { ALL_SPECS } from "./engine/specs/allSpecs";
 import { specNameKr, isHealerSpec } from "./engine/specs/specNames";
+import { heroTalentNameKr } from "./engine/specs/heroTalents";
 import { encounterNameKr } from "./engine/specs/encounterNames";
 import { getSpecIconUrl } from "./engine/specs/specIcons";
 import type { CastSnapshot, GearItem } from "./engine/analysis/types";
@@ -716,10 +717,17 @@ function AnalysisView({ analysis, spellMeta, cColor, activeTab, setActiveTab,
         <div className="flex items-center justify-between mb-4">
           <div className="text-sm">
             <span style={{ color: cColor }}>{a.playerName}</span>
-            {a.myHeroSpec && <span className="text-[10px] px-1.5 py-0.5 rounded ml-1" style={{ color: "#a78bfa", background: "#a78bfa15" }}>{a.myHeroSpec}</span>}
+            {/* 영웅특성 우선 — WCL combatantInfo.heroTreeName 기반. 없으면 detectHeroTalent 결과 fallback. */}
+            {(() => {
+              const hero = a.gear.myHeroTree || a.myHeroSpec;
+              return hero ? <span className="text-[10px] px-1.5 py-0.5 rounded ml-1" style={{ color: "#a78bfa", background: "#a78bfa15" }}>{heroTalentNameKr(hero)}</span> : null;
+            })()}
             <span className="text-gray-600 mx-2">vs</span>
             <span className="text-gray-300">{a.refName}</span>
-            {a.refHeroSpec && <span className="text-[10px] px-1.5 py-0.5 rounded ml-1" style={{ color: "#fbbf24", background: "#fbbf2415" }}>{a.refHeroSpec}</span>}
+            {(() => {
+              const hero = a.gear.refHeroTree || a.refHeroSpec;
+              return hero ? <span className="text-[10px] px-1.5 py-0.5 rounded ml-1" style={{ color: "#fbbf24", background: "#fbbf2415" }}>{heroTalentNameKr(hero)}</span> : null;
+            })()}
             <span className="text-gray-600 ml-3 text-xs">{a.encounter}</span>
           </div>
           <div className="flex gap-4 text-xs text-gray-500">
@@ -997,13 +1005,13 @@ function GearTab({ analysis, rankings, refSpec, statScan, setStatScan, statScanL
             <div>
               <div className="text-[10px] text-gray-600 mb-1">나</div>
               {g.myHeroTree
-                ? <span className="text-sm text-white font-semibold">{g.myHeroTree}</span>
+                ? <span className="text-sm text-white font-semibold">{heroTalentNameKr(g.myHeroTree)}</span>
                 : <span className="text-gray-600 text-xs">정보 없음</span>}
             </div>
             <div>
               <div className="text-[10px] text-gray-600 mb-1">상대</div>
               {g.refHeroTree
-                ? <span className="text-sm text-white font-semibold">{g.refHeroTree}</span>
+                ? <span className="text-sm text-white font-semibold">{heroTalentNameKr(g.refHeroTree)}</span>
                 : <span className="text-gray-600 text-xs">정보 없음</span>}
             </div>
           </div>

@@ -198,8 +198,11 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
   for (const a of myAuras) myAbilityNames.push(a.name);
   for (const a of refAuras) refAbilityNames.push(a.name);
 
-  const detectedMyHero = detectHeroTalent(myAbilityNames) || input.myHeroSpec;
-  const detectedRefHero = detectHeroTalent(refAbilityNames) || input.refHeroSpec;
+  // 영웅특성 감지 우선순위: (1) WCL combatantInfo.heroTreeName — 서버 제공, 가장 정확
+  // (2) detectHeroTalent — ability 이름 기반 시그니처. Midnight 신스킬 미등록 시 누락 가능
+  // input.myHeroSpec은 base spec이라 fallback에 쓰면 "Devourer" 같은 base 이름이 영웅특성으로 오인됨 → 제외.
+  const detectedMyHero = myInfo?.heroTreeName || detectHeroTalent(myAbilityNames) || "";
+  const detectedRefHero = refInfo?.heroTreeName || detectHeroTalent(refAbilityNames) || "";
   if (detectedMyHero) console.log("[analysis] 내 영웅특성 감지:", detectedMyHero);
   if (detectedRefHero) console.log("[analysis] 상대 영웅특성 감지:", detectedRefHero);
 

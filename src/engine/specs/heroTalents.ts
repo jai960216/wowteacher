@@ -301,6 +301,8 @@ function normalizeTreeName(s: string): string {
  */
 export function heroTalentNameKr(englishName: string): string {
   if (!englishName) return "";
+  // 숫자 ID 문자열 방어 — 파싱이 숫자를 담아 UI에 그대로 뜨는 사고 방지
+  if (/^\d+$/.test(englishName.trim())) return "";
   const key = normalizeTreeName(englishName);
   const tree = HERO_TALENT_TREES.find(t => normalizeTreeName(t.name) === key);
   return tree?.nameKr ?? englishName;
