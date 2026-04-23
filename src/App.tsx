@@ -1005,14 +1005,14 @@ function GearTab({ analysis, rankings, refSpec, statScan, setStatScan, statScanL
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <div className="text-[10px] text-gray-600 mb-1.5">나</div>
+            <div className="text-[11px] font-bold mb-1.5" style={{ color: "#a78bfa" }}>나</div>
             {g.myHeroTree && <div className="text-sm text-white font-semibold mb-2">{heroTalentNameKr(g.myHeroTree)}</div>}
             <a
               href={`https://ko.warcraftlogs.com/reports/${analysis.myReportCode}?fight=${analysis.myFightID}&type=summary&source=${analysis.myPlayerId}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition hover:brightness-125"
-              style={{ background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff", boxShadow: "0 0 8px #a855f755" }}
+              style={{ background: "#a78bfa15", border: "1px solid #a78bfa55", color: "#a78bfa" }}
             >
               <span>📜</span>
               <span>특성 빌드 보기</span>
@@ -1020,14 +1020,14 @@ function GearTab({ analysis, rankings, refSpec, statScan, setStatScan, statScanL
             </a>
           </div>
           <div>
-            <div className="text-[10px] text-gray-600 mb-1.5">상대</div>
+            <div className="text-[11px] font-bold mb-1.5" style={{ color: "#fbbf24" }}>상대</div>
             {g.refHeroTree && <div className="text-sm text-white font-semibold mb-2">{heroTalentNameKr(g.refHeroTree)}</div>}
             <a
               href={`https://ko.warcraftlogs.com/reports/${analysis.refReportCode}?fight=${analysis.refFightID}&type=summary&source=${analysis.refPlayerId}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition hover:brightness-125"
-              style={{ background: "linear-gradient(135deg, #d97706, #fbbf24)", color: "#1a1a1a", boxShadow: "0 0 8px #fbbf2455" }}
+              style={{ background: "#fbbf2415", border: "1px solid #fbbf2455", color: "#fbbf24" }}
             >
               <span>📜</span>
               <span>특성 빌드 보기</span>
@@ -2438,7 +2438,7 @@ function PatternsTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center justify-center gap-2 px-3 py-2.5 rounded text-xs font-bold transition hover:brightness-125"
-            style={{ background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff", boxShadow: "0 0 8px #a855f755" }}
+            style={{ background: "#a78bfa15", border: "1px solid #a78bfa55", color: "#a78bfa" }}
           >
             <span>▶️</span>
             <span>내 리플레이 보기</span>
@@ -2449,7 +2449,7 @@ function PatternsTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center justify-center gap-2 px-3 py-2.5 rounded text-xs font-bold transition hover:brightness-125"
-            style={{ background: "linear-gradient(135deg, #d97706, #fbbf24)", color: "#1a1a1a", boxShadow: "0 0 8px #fbbf2455" }}
+            style={{ background: "#fbbf2415", border: "1px solid #fbbf2455", color: "#fbbf24" }}
           >
             <span>▶️</span>
             <span>상대 리플레이 보기</span>
