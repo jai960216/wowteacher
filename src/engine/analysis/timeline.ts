@@ -5,6 +5,7 @@
 
 import type { WCLCastEvent, WCLBuffEvent, WCLResourceEvent } from "../wcl/api";
 import type { CastSnapshot, TimelineEntry } from "./types";
+import { devLog } from "../../debug";
 
 // 피의 욕망 계열 spell IDs
 const LUST_IDS = new Set([2825, 32182, 80353, 264667, 390386, 386540]);
@@ -63,13 +64,13 @@ export function buildCastSnapshots(
     }
     // 디버깅
     const stackingMeta = [...stackingSpellIds].filter(id => (abilityMap[id] ?? "").toLowerCase().includes("metamorphosis"));
-    console.log("[timeline] 탈태 ID (비스택):", [...metaSpellIds].map(id => `${id}(${abilityMap[id]})`).join(", ") || "없음");
-    console.log("[timeline] 제외된 스택형 메타 ID:", stackingMeta.map(id => `${id}(${abilityMap[id]})`).join(", ") || "없음");
+    devLog("[timeline] 탈태 ID (비스택):", [...metaSpellIds].map(id => `${id}(${abilityMap[id]})`).join(", ") || "없음");
+    devLog("[timeline] 제외된 스택형 메타 ID:", stackingMeta.map(id => `${id}(${abilityMap[id]})`).join(", ") || "없음");
 
     // 비스택 메타 버프 이벤트 카운트
     const metaApply = buffEvents.filter(b => metaSpellIds.has(b.abilityGameID) && b.type === "applybuff").length;
     const metaRemove = buffEvents.filter(b => metaSpellIds.has(b.abilityGameID) && b.type === "removebuff").length;
-    console.log("[timeline] 탈태 applybuff:", metaApply, "removebuff:", metaRemove);
+    devLog("[timeline] 탈태 applybuff:", metaApply, "removebuff:", metaRemove);
   }
 
   // 상태 추적
@@ -158,7 +159,7 @@ export function buildCastSnapshots(
   // 디버깅: 메타 감지 여부
   const metaCasts = snapshots.filter(s => s.isDuringMeta).length;
   const lustCasts = snapshots.filter(s => s.isDuringLust).length;
-  console.log(`[timeline] snapshots: ${snapshots.length} | 메타중: ${metaCasts} | 피욕중: ${lustCasts} | 자원범위: ${Math.min(...snapshots.map(s => s.resource))}~${Math.max(...snapshots.map(s => s.resource))}`);
+  devLog(`[timeline] snapshots: ${snapshots.length} | 메타중: ${metaCasts} | 피욕중: ${lustCasts} | 자원범위: ${Math.min(...snapshots.map(s => s.resource))}~${Math.max(...snapshots.map(s => s.resource))}`);
 
   return snapshots;
 }

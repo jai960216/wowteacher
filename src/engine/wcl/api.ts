@@ -9,6 +9,7 @@
 import { getToken } from "./auth";
 import { setRateLimitData } from "./rateLimit";
 import { detectHeroTalent } from "../specs/heroTalents";
+import { devLog } from "../../debug";
 // spec 필드는 항상 특성명 (Devourer, Fury 등). 영웅특성은 별도.
 
 const PUBLIC_API = "https://www.warcraftlogs.com/api/v2/client";
@@ -33,10 +34,22 @@ function injectRateLimitField(gql: string): string {
   return `${gql.slice(0, lastBrace)}  ${RATE_LIMIT_FIELD}\n${gql.slice(lastBrace)}`;
 }
 
+/**
+ * WCL HTTP/GraphQL 에러. 호출부에서 status로 401/429/5xx 분기해 적절한 유저 메시지 분기 가능.
+ */
+export class WCLApiError extends Error {
+  public readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "WCLApiError";
+    this.status = status;
+  }
+}
+
 /** GraphQL 요청 */
 async function query<T>(gql: string, variables: Record<string, any> = {}, useUserApi = false): Promise<T> {
   const token = getToken();
-  if (!token) throw new Error("WarcraftLogs 인증이 필요합니다.");
+  if (!token) throw new WCLApiError(401, "WarcraftLogs 인증이 필요합니다.");
 
   const res = await fetch(useUserApi ? USER_API : PUBLIC_API, {
     method: "POST",
@@ -47,10 +60,11 @@ async function query<T>(gql: string, variables: Record<string, any> = {}, useUse
     body: JSON.stringify({ query: injectRateLimitField(gql), variables }),
   });
 
-  if (!res.ok) throw new Error(`WarcraftLogs API error: ${res.status}`);
+  if (!res.ok) throw new WCLApiError(res.status, `WarcraftLogs API error: ${res.status}`);
 
   const json = await res.json();
-  if (json.errors) throw new Error(json.errors[0]?.message ?? "GraphQL error");
+  // GraphQL 에러 — HTTP는 200이지만 응답에 errors 있음. status 0으로 구분해 errorMessage에서 감싼 메시지 노출.
+  if (json.errors) throw new WCLApiError(0, json.errors[0]?.message ?? "GraphQL error");
   if (json.data?.rateLimitData) setRateLimitData(json.data.rateLimitData);
   return json.data;
 }
@@ -267,7 +281,7 @@ async function fetchReportInfo(reportCode: string): Promise<WCLReportInfo> {
   for (const ab of (report.masterData.abilities ?? [])) {
     if (ab.gameID && ab.name) abilityMap[ab.gameID] = ab.name;
   }
-  console.log(`[getReportInfo] abilities 매핑: ${Object.keys(abilityMap).length}개`);
+  devLog(`[getReportInfo] abilities 매핑: ${Object.keys(abilityMap).length}개`);
 
   return {
     code: report.code,
@@ -308,8 +322,10 @@ export async function getCasts(
   void _fightId;
   const allEvents: WCLCastEvent[] = [];
   let currentStart: number = startTime;
+  let prevStart = -1;
+  const MAX_PAGES = 30;
 
-  do {
+  for (let page = 0; page < MAX_PAGES; page++) {
     const data: any = await query<any>(`
       query ($code: String!, $startTime: Float!, $endTime: Float!, $sourceID: Int!) {
         reportData {
@@ -342,8 +358,11 @@ export async function getCasts(
         abilityIcon: e.ability?.abilityIcon ?? "",
       });
     }
-    currentStart = events.nextPageTimestamp ?? 0;
-  } while (currentStart > 0);
+    const next = events.nextPageTimestamp ?? 0;
+    if (next <= 0 || next <= prevStart) break;
+    prevStart = currentStart;
+    currentStart = next;
+  }
 
   return allEvents;
 }
@@ -426,7 +445,7 @@ export async function getBuffsTable(
   // 외부 버프 후보 — PI/EM/Prescience 계열 키워드 매칭 항목은 uptime 컷과 무관하게 전부 출력.
   // 마주가 3번만 걸렸으면 uptime 10% 근처로 Top20 밖이라 이전 로그에선 보이지 않았음.
   const externalCandidates = mapped.filter(b => EXTERNAL_KEYWORD_RE.test(b.name));
-  console.log(
+  devLog(
     `[getBuffsTable] target=${targetId} | ${mapped.length}종 | 외부버프후보:`,
     externalCandidates.length > 0
       ? externalCandidates.map(b => `${b.name}(#${b.spellId}) ${b.totalUses}회 ${b.uptimePercent}%`).join(" | ")
@@ -538,7 +557,7 @@ export async function getExternalBuffEvents(
     };
   });
   const hit = results.filter(r => r.applyCount > 0);
-  console.log(
+  devLog(
     `[getExternalBuffEvents] target=${targetId}:`,
     hit.length > 0 ? hit.map(r => `#${r.spellId} ${r.applyCount}회 ${r.uptimePercent}%`).join(" | ") : "없음",
   );
@@ -612,7 +631,7 @@ export async function getIncomingCasts(
 
   const results = validIds.map(id => ({ spellId: id, castCount: counts[id] }));
   const hit = results.filter(r => r.castCount > 0);
-  console.log(
+  devLog(
     `[getIncomingCasts] target=${targetId}:`,
     hit.length > 0 ? hit.map(r => `#${r.spellId} ${r.castCount}회`).join(" | ") : "없음",
   );
@@ -629,8 +648,10 @@ export async function getBuffs(
   void _fightId;
   const allEvents: WCLBuffEvent[] = [];
   let currentStart: number = startTime;
+  let prevStart = -1;
+  const MAX_PAGES = 30;
 
-  do {
+  for (let page = 0; page < MAX_PAGES; page++) {
     const data: any = await query<any>(`
       query ($code: String!, $startTime: Float!, $endTime: Float!, $targetID: Int!) {
         reportData {
@@ -658,8 +679,11 @@ export async function getBuffs(
 
     const events: any = data.reportData.report.events;
     allEvents.push(...events.data);
-    currentStart = events.nextPageTimestamp ?? 0;
-  } while (currentStart > 0);
+    const next = events.nextPageTimestamp ?? 0;
+    if (next <= 0 || next <= prevStart) break;
+    prevStart = currentStart;
+    currentStart = next;
+  }
 
   return allEvents;
 }
@@ -675,8 +699,10 @@ export async function getResources(
   void _fightId;
   const allEvents: WCLResourceEvent[] = [];
   let currentStart: number = startTime;
+  let prevStart = -1;
+  const MAX_PAGES = 30;
 
-  do {
+  for (let page = 0; page < MAX_PAGES; page++) {
     const data: any = await query<any>(`
       query ($code: String!, $startTime: Float!, $endTime: Float!, $sourceID: Int!) {
         reportData {
@@ -718,8 +744,11 @@ export async function getResources(
       });
     }
 
-    currentStart = events.nextPageTimestamp ?? 0;
-  } while (currentStart > 0);
+    const next = events.nextPageTimestamp ?? 0;
+    if (next <= 0 || next <= prevStart) break;
+    prevStart = currentStart;
+    currentStart = next;
+  }
 
   return allEvents;
 }
@@ -797,9 +826,9 @@ export async function getMyEncounterRankings(
   const raw = data.characterData?.character?.encounterRankings;
   const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
   const ranks = parsed?.ranks ?? [];
-  console.log(`[getMyEncounterRankings] ${name} encounter=${encounterID} diff=${difficulty}: ${ranks.length}건`);
+  devLog(`[getMyEncounterRankings] ${name} encounter=${encounterID} diff=${difficulty}: ${ranks.length}건`);
   if (ranks.length > 0) {
-    console.log(`[getMyEncounterRankings] 첫 항목:`, JSON.stringify(ranks[0]).slice(0, 500));
+    devLog(`[getMyEncounterRankings] 첫 항목:`, JSON.stringify(ranks[0]).slice(0, 500));
   }
   return ranks.map((r: any) => ({
     reportCode: r.report?.code ?? "",
@@ -843,7 +872,7 @@ export async function getMyCharacters(): Promise<Array<{
   `, {}, true);
 
   const chars = data.userData?.currentUser?.characters ?? [];
-  console.log("[getMyCharacters] raw:", chars.map((c: any) => ({ name: c.name, classID: c.classID })));
+  devLog("[getMyCharacters] raw:", chars.map((c: any) => ({ name: c.name, classID: c.classID })));
   return chars.map((c: any) => {
     const classID = c.classID ?? 0;
     const className = CLASSID_TO_APINAME[classID] ?? "";
@@ -894,9 +923,9 @@ export async function searchCharacter(
     // 첫 난이도에서 원본 키 확인
     if (parsed?.rankings?.[0] && !((searchCharacter as any)._logged)) {
       (searchCharacter as any)._logged = true;
-      console.log("[zoneRankings] 원본 보스 키:", Object.keys(parsed.rankings[0]).join(", "));
-      console.log("[zoneRankings] 원본 보스[0]:", JSON.stringify(parsed.rankings[0]).slice(0, 500));
-      console.log("[zoneRankings] 원본 루트 키:", Object.keys(parsed).join(", "));
+      devLog("[zoneRankings] 원본 보스 키:", Object.keys(parsed.rankings[0]).join(", "));
+      devLog("[zoneRankings] 원본 보스[0]:", JSON.stringify(parsed.rankings[0]).slice(0, 500));
+      devLog("[zoneRankings] 원본 루트 키:", Object.keys(parsed).join(", "));
     }
     if (parsed && parsed.rankings && parsed.rankings.length > 0) {
       allZoneRankings.push({
@@ -922,7 +951,7 @@ export async function searchCharacter(
 
   const classID = char.classID ?? 0;
   const className = CLASSID_TO_APINAME[classID] ?? "";
-  console.log("[searchCharacter]", name, "classID:", classID, "→ className:", className,
+  devLog("[searchCharacter]", name, "classID:", classID, "→ className:", className,
     "| zoneRankings:", allZoneRankings.map(z => DIFFICULTY_NAMES[z.difficulty]).join(",") || "없음");
 
   return {
@@ -966,7 +995,7 @@ export function getDefaultPartition(encounterId: number): Promise<number> {
       if (partitions.length === 0) {
         console.warn(`[getDefaultPartition] encounter ${encounterId}: partitions 0건, fallback=${PARTITION_FALLBACK}`);
       } else {
-        console.log(
+        devLog(
           `[getDefaultPartition] encounter ${encounterId} → partition ${def}`,
           "| 후보:", partitions.map(p => `${p.id}${p.default ? "*" : ""}:${p.name}`).join(", "),
         );
@@ -999,7 +1028,7 @@ export async function getEncounterRankings(
 
   // partition은 zone마다·시즌 안에서도 밸런스 패치마다 바뀜. WCL의 default를 동적으로 따라감.
   const partition = await getDefaultPartition(encounterId);
-  console.log("[getEncounterRankings] className:", className, "encounter:", encounterId, "diff:", difficulty, "metric:", metric, "partition:", partition);
+  devLog("[getEncounterRankings] className:", className, "encounter:", encounterId, "diff:", difficulty, "metric:", metric, "partition:", partition);
 
   // WCL characterRankings는 className/specName을 공백 없는 CamelCase("DeathKnight")로 기대.
   // 공백 포함("Death Knight")으로 보내면 0건 반환. 공백 제거 후 서버 필터로 보내 해당 직업 상위 100명을 바로 받음.
@@ -1046,8 +1075,8 @@ export async function getEncounterRankings(
     console.warn("[getEncounterRankings] rankings 0건. 원본 응답:", JSON.stringify(parsed).slice(0, 800));
   } else {
     const first = rankings[0];
-    console.log("[getEncounterRankings] 원본 첫 항목 키:", Object.keys(first));
-    console.log("[getEncounterRankings] 원본 첫 항목:", JSON.stringify(first).slice(0, 500));
+    devLog("[getEncounterRankings] 원본 첫 항목 키:", Object.keys(first));
+    devLog("[getEncounterRankings] 원본 첫 항목:", JSON.stringify(first).slice(0, 500));
   }
 
   // WCL 응답의 class는 "DemonHunter" (붙여쓰기) 형태
@@ -1085,7 +1114,7 @@ export async function getEncounterRankings(
       if (!rClass) { droppedUnknown++; return false; }
       return normalize(rClass) === target;
     });
-    console.log(
+    devLog(
       "[getEncounterRankings] 클라이언트 필터:", className,
       "| 전체:", rankings.length, "→", filtered.length,
       droppedUnknown > 0 ? `| class 누락 drop=${droppedUnknown}` : "",
@@ -1097,7 +1126,7 @@ export async function getEncounterRankings(
       return true;
     });
     if (droppedHidden > 0) {
-      console.log(`[getEncounterRankings] 비공개 drop=${droppedHidden}`);
+      devLog(`[getEncounterRankings] 비공개 drop=${droppedHidden}`);
     }
   }
 
@@ -1143,8 +1172,10 @@ export async function getDamageDone(
 ): Promise<WCLDamageEvent[]> {
   const allEvents: WCLDamageEvent[] = [];
   let currentStart = startTime;
+  let prevStart = -1;
+  const MAX_PAGES = 30;
 
-  do {
+  for (let page = 0; page < MAX_PAGES; page++) {
     const data: any = await query<any>(`
       query ($code: String!, $startTime: Float!, $endTime: Float!, $sourceID: Int!) {
         reportData {
@@ -1171,8 +1202,11 @@ export async function getDamageDone(
 
     const events = data.reportData.report.events;
     allEvents.push(...events.data);
-    currentStart = events.nextPageTimestamp ?? 0;
-  } while (currentStart > 0);
+    const next = events.nextPageTimestamp ?? 0;
+    if (next <= 0 || next <= prevStart) break;
+    prevStart = currentStart;
+    currentStart = next;
+  }
 
   return allEvents;
 }
@@ -1186,8 +1220,10 @@ export async function getHealingDone(
 ): Promise<WCLHealEvent[]> {
   const allEvents: WCLHealEvent[] = [];
   let currentStart = startTime;
+  let prevStart = -1;
+  const MAX_PAGES = 30;
 
-  do {
+  for (let page = 0; page < MAX_PAGES; page++) {
     const data: any = await query<any>(`
       query ($code: String!, $startTime: Float!, $endTime: Float!, $sourceID: Int!) {
         reportData {
@@ -1227,8 +1263,11 @@ export async function getHealingDone(
         fight: e.fight ?? 0,
       });
     }
-    currentStart = events.nextPageTimestamp ?? 0;
-  } while (currentStart > 0);
+    const next = events.nextPageTimestamp ?? 0;
+    if (next <= 0 || next <= prevStart) break;
+    prevStart = currentStart;
+    currentStart = next;
+  }
 
   return allEvents;
 }
@@ -1341,7 +1380,7 @@ export async function getFightPlayerIds(
   const table = data.reportData.report.table;
   const parsed = typeof table === "string" ? JSON.parse(table) : table;
   const entries = parsed?.data?.entries ?? parsed?.entries ?? [];
-  console.log(`[getFightPlayerIds] ${entries.length}명 발견:`, entries.map((e: any) => `${e.name}(${e.id})`).join(", "));
+  devLog(`[getFightPlayerIds] ${entries.length}명 발견:`, entries.map((e: any) => `${e.name}(${e.id})`).join(", "));
   return entries
     .filter((e: any) => e.name && e.id != null)
     .map((e: any) => ({ id: e.id, name: e.name }));

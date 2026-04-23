@@ -14,6 +14,7 @@ import { filterPassiveCasts } from "./filters";
 import { buildAuraTimeline } from "./auras";
 import { detectHeroTalent } from "../specs/heroTalents";
 import { EXTERNAL_BUFFS, EXTERNAL_BUFF_SPELL_IDS, EXTERNAL_SPELL_TO_LABEL } from "../externalBuffs";
+import { devLog } from "../../debug";
 import type {
   FullAnalysis, GearComparison, DamageAnalysis, HealingAnalysis, DamageBreakdownEntry,
   CooldownUsage, WCLDamageEvent, WCLHealEvent, WCLCombatantInfo, GearItem,
@@ -39,11 +40,11 @@ export interface AnalysisInput {
 }
 
 export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysis> {
-  console.log(`[analysis] 데이터 수집 시작 (12 쿼리 병렬): my=${input.myReport.code}:${input.myFight.id} ref=${input.refReportCode}:${input.refFight.id}`);
+  devLog(`[analysis] 데이터 수집 시작 (12 쿼리 병렬): my=${input.myReport.code}:${input.myFight.id} ref=${input.refReportCode}:${input.refFight.id}`);
   // 각 쿼리별 완료 시각 로그 — hang 지점 추적용
   const track = <T>(label: string, p: Promise<T>): Promise<T> => {
     const t0 = performance.now();
-    return p.then(v => { console.log(`[analysis] ✓ ${label} (${Math.round(performance.now() - t0)}ms)`); return v; },
+    return p.then(v => { devLog(`[analysis] ✓ ${label} (${Math.round(performance.now() - t0)}ms)`); return v; },
                   e => { console.error(`[analysis] ✗ ${label} 실패:`, e); throw e; });
   };
   // 1) 데이터 수집 (병렬 — 12개 API 호출)
@@ -68,7 +69,7 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
     track("myCombatantInfo", getCombatantInfo(input.myReport.code, input.myFight.startTime, input.myFight.endTime)),
     track("refCombatantInfo", getCombatantInfo(input.refReportCode, input.refFight.startTime, input.refFight.endTime)),
   ]);
-  console.log("[analysis] 데이터 수집 완료");
+  devLog("[analysis] 데이터 수집 완료");
 
   // 1-b) 힐러 모드: 힐량 데이터 추가 수집 (4개 쿼리)
   let myHealEvents: WCLHealEvent[] = [];
@@ -82,7 +83,7 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
       getHealingTable(input.myReport.code, input.myPlayerId, input.myFight.startTime, input.myFight.endTime),
       getHealingTable(input.refReportCode, input.refPlayerId, input.refFight.startTime, input.refFight.endTime),
     ]);
-    console.log(`[analysis] 힐량 이벤트: 나 ${myHealEvents.length}, 상대 ${refHealEvents.length}, 테이블: 나 ${myHealTable.length}종 상대 ${refHealTable.length}종`);
+    devLog(`[analysis] 힐량 이벤트: 나 ${myHealEvents.length}, 상대 ${refHealEvents.length}, 테이블: 나 ${myHealTable.length}종 상대 ${refHealTable.length}종`);
   }
 
   const myDuration = (input.myFight.endTime - input.myFight.startTime) / 1000;
@@ -97,17 +98,17 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
   // 패시브/자원 이벤트 필터링 (영혼파편, 자동공격 등 제외)
   const myFilteredCasts = filterPassiveCasts(myCasts);
   const refFilteredCasts = filterPassiveCasts(refCasts);
-  console.log(`[analysis] 캐스트 필터: 나 ${myCasts.length}→${myFilteredCasts.length}, 상대 ${refCasts.length}→${refFilteredCasts.length}`);
+  devLog(`[analysis] 캐스트 필터: 나 ${myCasts.length}→${myFilteredCasts.length}, 상대 ${refCasts.length}→${refFilteredCasts.length}`);
 
   // 2) 장비/스탯 비교
-  console.log(`[analysis] CombatantInfo: my=${myCombatantInfos.length}명, ref=${refCombatantInfos.length}명`);
-  console.log(`[analysis] myPlayerId=${input.myPlayerId}, available sourceIDs:`, myCombatantInfos.map(c => c.sourceID));
-  console.log(`[analysis] refPlayerId=${input.refPlayerId}, available sourceIDs:`, refCombatantInfos.map(c => c.sourceID));
-  console.log(`[analysis] myCasts=${myCasts.length}, myDmgEvents=${myDmgEvents.length}, myDmgTable=${myDmgTable.length}`);
+  devLog(`[analysis] CombatantInfo: my=${myCombatantInfos.length}명, ref=${refCombatantInfos.length}명`);
+  devLog(`[analysis] myPlayerId=${input.myPlayerId}, available sourceIDs:`, myCombatantInfos.map(c => c.sourceID));
+  devLog(`[analysis] refPlayerId=${input.refPlayerId}, available sourceIDs:`, refCombatantInfos.map(c => c.sourceID));
+  devLog(`[analysis] myCasts=${myCasts.length}, myDmgEvents=${myDmgEvents.length}, myDmgTable=${myDmgTable.length}`);
   const myInfo = myCombatantInfos.find(c => c.sourceID === input.myPlayerId);
   const refInfo = refCombatantInfos.find(c => c.sourceID === input.refPlayerId);
-  console.log(`[analysis] myInfo found=${!!myInfo}, refInfo found=${!!refInfo}`);
-  if (myInfo) console.log(`[analysis] myStats:`, myInfo.stats, `gear items:`, myInfo.gear.length);
+  devLog(`[analysis] myInfo found=${!!myInfo}, refInfo found=${!!refInfo}`);
+  if (myInfo) devLog(`[analysis] myStats:`, myInfo.stats, `gear items:`, myInfo.gear.length);
   if (!myInfo && myCombatantInfos.length > 0) console.warn(`[analysis] ⚠️ myPlayerId ${input.myPlayerId} not in combatantInfos!`);
   const gear = buildGearComparison(myInfo, refInfo);
 
@@ -152,18 +153,18 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
   // 8.5) 오라 (버프/디버프) 가동 구간
   const myAuras = buildAuraTimeline(myBuffs, input.myFight.startTime, input.myFight.endTime, myAbilityMap);
   const refAuras = buildAuraTimeline(refBuffs, input.refFight.startTime, input.refFight.endTime, refAbilityMap);
-  console.log(`[analysis] 오라: 나 ${myAuras.length}종 (raw ${myBuffs.length}이벤트), 상대 ${refAuras.length}종 (raw ${refBuffs.length}이벤트)`);
-  console.log(`[analysis] 리포트 참조: my=${input.myReport.code}:${input.myFight.id}(player=${input.myPlayerId}) ref=${input.refReportCode}:${input.refFight.id}(player=${input.refPlayerId})`);
+  devLog(`[analysis] 오라: 나 ${myAuras.length}종 (raw ${myBuffs.length}이벤트), 상대 ${refAuras.length}종 (raw ${refBuffs.length}이벤트)`);
+  devLog(`[analysis] 리포트 참조: my=${input.myReport.code}:${input.myFight.id}(player=${input.myPlayerId}) ref=${input.refReportCode}:${input.refFight.id}(player=${input.refPlayerId})`);
 
   // 8.6) 외부 버프 수령 여부 계산 — Buffs events + 외부 Cast 이벤트 OR 조합.
   // Buffs events가 누락하는 경우(WCL API 제약) 시전자의 cast 이벤트로 역추정.
-  console.log("[analysis] 외부 Cast 쿼리 시작");
+  devLog("[analysis] 외부 Cast 쿼리 시작");
   const castT0 = performance.now();
   const [myIncomingCasts, refIncomingCasts] = await Promise.all([
     getIncomingCasts(input.myReport.code, input.myPlayerId, input.myFight.startTime, input.myFight.endTime, EXTERNAL_BUFF_SPELL_IDS),
     getIncomingCasts(input.refReportCode, input.refPlayerId, input.refFight.startTime, input.refFight.endTime, EXTERNAL_BUFF_SPELL_IDS),
   ]);
-  console.log(`[analysis] 외부 Cast 쿼리 완료 (${Math.round(performance.now() - castT0)}ms)`);
+  devLog(`[analysis] 외부 Cast 쿼리 완료 (${Math.round(performance.now() - castT0)}ms)`);
   const detectedFrom = (auras: typeof myAuras, casts: Array<{ spellId: number; castCount: number }>): Record<string, boolean> => {
     const received: Record<string, boolean> = {};
     for (const cfg of EXTERNAL_BUFFS) received[cfg.label] = false;
@@ -186,7 +187,7 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
     my: detectedFrom(myAuras, myIncomingCasts),
     ref: detectedFrom(refAuras, refIncomingCasts),
   };
-  console.log("[analysis] 외부 버프:", JSON.stringify(externalBuffsReceived));
+  devLog("[analysis] 외부 버프:", JSON.stringify(externalBuffsReceived));
 
   // 9) 패턴 분석 (딜사이클, 자원별 습관, 시퀀스)
   const patterns = analyzePatterns(mySnapshots, refSnapshots);
@@ -203,8 +204,8 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
   // input.myHeroSpec은 base spec이라 fallback에 쓰면 "Devourer" 같은 base 이름이 영웅특성으로 오인됨 → 제외.
   const detectedMyHero = myInfo?.heroTreeName || detectHeroTalent(myAbilityNames) || "";
   const detectedRefHero = refInfo?.heroTreeName || detectHeroTalent(refAbilityNames) || "";
-  if (detectedMyHero) console.log("[analysis] 내 영웅특성 감지:", detectedMyHero);
-  if (detectedRefHero) console.log("[analysis] 상대 영웅특성 감지:", detectedRefHero);
+  if (detectedMyHero) devLog("[analysis] 내 영웅특성 감지:", detectedMyHero);
+  if (detectedRefHero) devLog("[analysis] 상대 영웅특성 감지:", detectedRefHero);
 
   // parse % / ilvl % 제거 — API className 필터 미지원으로 정확한 계산 불가
   const myIlvlPercentile = 0;

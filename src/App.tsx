@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useSyncExternalStore, Fragment } from "react";
 import { isAuthenticated, startAuth, handleCallback, logout, registerLogoutHook } from "./engine/wcl/auth";
-import { clearAllCaches } from "./engine/wcl/api";
+import { clearAllCaches, WCLApiError } from "./engine/wcl/api";
 import { subscribeRateLimit, getRateLimitSnapshot } from "./engine/wcl/rateLimit";
 import {
   getMyCharacters, searchCharacter, getReportInfo, getEncounterRankings, getFightPlayerIds, getMyEncounterRankings,
@@ -20,6 +20,7 @@ import { EXTERNAL_BUFFS } from "./engine/externalBuffs";
 import { scanTopStats, type TopStatsScanResult } from "./engine/analysis/statScan";
 import { SpellResolver } from "./engine/spell/resolver";
 import type { SpellMeta } from "./engine/spell/types";
+import { devLog } from "./debug";
 import "./index.css";
 
 type Step = "login" | "characters" | "overview" | "myKills" | "rankings" | "result";
@@ -50,7 +51,7 @@ function App() {
   const [loadingMsg, setLoadingMsg] = useState("");
   const [step, _setStep] = useState<Step>(isAuthenticated() ? "characters" : "login");
   const [showDonate, setShowDonate] = useState(false);
-  const setStep = (s: Step) => { console.log("[step]", step, "→", s); _setStep(s); };
+  const setStep = (s: Step) => { devLog("[step]", step, "→", s); _setStep(s); };
 
   const [myChars, setMyChars] = useState<MyCharacter[]>([]);
   const [selectedChar, setSelectedChar] = useState<MyCharacter | null>(null);
@@ -133,7 +134,7 @@ function App() {
       const allBossSpecs = data.allZoneRankings.flatMap(zr => zr.bosses.map(b => b.spec)).filter(Boolean);
       const isHealer = allBossSpecs.some(s => isHealerSpec(s));
       setMetric(isHealer ? "hps" : "dps");
-      console.log("[selectChar] 힐러 감지:", isHealer, "step → overview");
+      devLog("[selectChar] 힐러 감지:", isHealer, "step → overview");
       setSelectedChar(mergedChar);
       setAllZoneRankings(data.allZoneRankings);
       setStep("overview");
@@ -173,7 +174,7 @@ function App() {
         if (r.status === "fulfilled") merged.push(...r.value);
         else console.warn(`[rankings] ${className}/${specs[i]} 실패:`, r.reason);
       });
-      console.log(`[rankings] ${className} ${merged.length}명 수집 (${specs.length}개 spec × ${perSpec}, metric=${rankingMetric})`);
+      devLog(`[rankings] ${className} ${merged.length}명 수집 (${specs.length}개 spec × ${perSpec}, metric=${rankingMetric})`);
       return merged;
     })();
 
@@ -258,7 +259,7 @@ function App() {
           if (myRanks.length === 0) throw new Error("해당 보스의 내 킬 기록을 찾을 수 없습니다.");
           bestRank = myRanks[0];
         }
-        console.log(`[doAnalysis] 내 킬 기록: report=${bestRank.reportCode}, fight=${bestRank.fightID}, dps=${bestRank.amount.toFixed(0)}`);
+        devLog(`[doAnalysis] 내 킬 기록: report=${bestRank.reportCode}, fight=${bestRank.fightID}, dps=${bestRank.amount.toFixed(0)}`);
 
         setLoadingMsg("내 리포트 로딩...");
         myReport = await getReportInfo(bestRank.reportCode);
@@ -277,7 +278,7 @@ function App() {
           if (!me) throw new Error("리포트에서 내 캐릭터를 찾을 수 없습니다.");
           myPid = me.id;
         }
-        console.log(`[doAnalysis] 최종 sourceID=${myPid}`);
+        devLog(`[doAnalysis] 최종 sourceID=${myPid}`);
 
         setReportInfo(myReport);
         setSelectedFight(myFight);
@@ -289,7 +290,7 @@ function App() {
         const myNameLower = selectedChar.name.toLowerCase();
         const myFightEntry = fightPlayers.find(p => p.name.toLowerCase() === myNameLower);
         if (myFightEntry && myFightEntry.id !== myPid) {
-          console.log(`[doAnalysis] sourceID 보정: masterData=${myPid} → table=${myFightEntry.id}`);
+          devLog(`[doAnalysis] sourceID 보정: masterData=${myPid} → table=${myFightEntry.id}`);
           myPid = myFightEntry.id;
           setMyPlayerId(myPid);
         }
@@ -447,8 +448,8 @@ function App() {
             <h2 className="text-sm font-semibold text-gray-400 mb-4 uppercase tracking-wider">내 캐릭터</h2>
             {myChars.length === 0 ? <p className="text-gray-600 text-center py-12">등록된 캐릭터가 없습니다</p> : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {myChars.map((c, i) => (
-                  <button key={i} onClick={() => selectChar(c)} className="wcl-row flex items-center gap-3 p-3 text-left rounded">
+                {myChars.map((c) => (
+                  <button key={`${c.name}-${c.server}-${c.classID}`} onClick={() => selectChar(c)} className="wcl-row flex items-center gap-3 p-3 text-left rounded">
                     <img src={getClassIconUrl(c.classID)} alt="" className="w-8 h-8 rounded border border-gray-700" onError={e => (e.currentTarget.style.display = "none")} />
                     <div>
                       <div className="text-sm font-semibold" style={{ color: CLASS_COLORS[c.classID] ?? "#888" }}>{c.name}</div>
@@ -534,13 +535,13 @@ function App() {
               <div className="wcl-table-header grid grid-cols-[1fr_100px_80px] px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
                 <div>날짜</div><div className="text-right">DPS</div><div className="text-right">시간</div>
               </div>
-              {myKills.map((kill, i) => {
+              {myKills.map((kill) => {
                 const date = new Date(kill.startTime);
                 const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
                 const durSec = kill.duration / 1000;
                 const durStr = `${Math.floor(durSec / 60)}:${String(Math.floor(durSec % 60)).padStart(2, "0")}`;
                 return (
-                  <button key={i} onClick={() => selectMyKill(kill)}
+                  <button key={`${kill.reportCode}-${kill.fightID}`} onClick={() => selectMyKill(kill)}
                     className="wcl-table-row w-full grid grid-cols-[1fr_100px_80px] px-3 py-2.5 items-center text-left">
                     <div className="text-xs text-gray-300">{dateStr}</div>
                     <div className="text-right text-xs font-mono text-orange-400">{kill.amount.toFixed(0)}</div>
@@ -988,7 +989,7 @@ function GearTab({ analysis, rankings, refSpec, statScan, setStatScan, statScanL
     if (tabRef.current && window.$WowheadPower) {
       window.$WowheadPower.refreshLinks();
     }
-  });
+  }, [analysis]);
 
   // 스탯 키 자동 감지 (WCL 응답 구조에 따라 다를 수 있음)
   const allStatKeys = new Set([...Object.keys(g.myStats), ...Object.keys(g.refStats)]);
@@ -1180,11 +1181,11 @@ function ConsumablesSection({ myAuras, refAuras, myGear, refGear }: {
   // 콘솔 덤프 — 실제 aura 이름 확인용
   useEffect(() => {
     const names = (auras: GearAura[]) => auras.map(a => `${a.name}(#${a.ability})`).join(" | ");
-    console.log("[Consumables] 나 gear.myAuras:", names(myAuras));
-    console.log("[Consumables] 상대 gear.refAuras:", names(refAuras));
+    devLog("[Consumables] 나 gear.myAuras:", names(myAuras));
+    devLog("[Consumables] 상대 gear.refAuras:", names(refAuras));
     const we = (g: GearItem[]) => [15, 16].map(s => `slot${s}: perm=${g[s]?.permanentEnchant ?? 0} temp=${g[s]?.temporaryEnchant ?? 0}`).join(" | ");
-    console.log("[Consumables] 나 주무기 enchant:", we(myGear));
-    console.log("[Consumables] 상대 주무기 enchant:", we(refGear));
+    devLog("[Consumables] 나 주무기 enchant:", we(myGear));
+    devLog("[Consumables] 상대 주무기 enchant:", we(refGear));
   }, [myAuras, refAuras, myGear, refGear]);
 
   if (myAuras.length === 0 && refAuras.length === 0) return null;
@@ -1345,8 +1346,8 @@ function ExternalBuffsSection({ myAuras, refAuras, externalBuffsReceived, refRep
     const fmt = (auras: AuraInfo[]) => [...auras]
       .sort((a, b) => b.uptimePercent - a.uptimePercent)
       .map(a => `${a.name}(#${a.spellId}) ${a.uptimePercent}%`).join(" | ");
-    console.log(`[refAuras] ${refAuras.length}종:`, fmt(refAuras));
-    console.log(`[myAuras] ${myAuras.length}종:`, fmt(myAuras));
+    devLog(`[refAuras] ${refAuras.length}종:`, fmt(refAuras));
+    devLog(`[myAuras] ${myAuras.length}종:`, fmt(myAuras));
   }, [myAuras, refAuras]);
 
   return (
@@ -1536,10 +1537,10 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
 
   // Wowhead 툴팁 새로고침
   useEffect(() => {
-    if (window.$WowheadPower) {
-      const wh = window.$WowheadPower;
-      setTimeout(() => wh.refreshLinks(), 100);
-    }
+    if (!window.$WowheadPower) return;
+    const wh = window.$WowheadPower;
+    const timer = setTimeout(() => wh.refreshLinks(), 150);
+    return () => clearTimeout(timer);
   }, [view, scrollRange]);
 
   // 데이터 준비
@@ -2778,6 +2779,14 @@ function fmtDur(ms: number): string {
 }
 
 function errorMessage(e: unknown): string {
+  if (e instanceof WCLApiError) {
+    if (e.status === 0) return `WarcraftLogs 쿼리 오류: ${e.message}`;
+    if (e.status === 401) return "로그인이 만료됐어요. 다시 로그인해주세요.";
+    if (e.status === 403) return "접근 권한이 없어요. (비공개 리포트일 수 있음)";
+    if (e.status === 429) return "WarcraftLogs API 한도를 초과했어요. 잠시 후 다시 시도해주세요.";
+    if (e.status >= 500 && e.status < 600) return "WarcraftLogs 서버 일시 오류. 잠시 후 다시 시도해주세요.";
+    return e.message;
+  }
   return e instanceof Error ? e.message : String(e);
 }
 

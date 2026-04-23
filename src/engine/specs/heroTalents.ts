@@ -5,6 +5,8 @@
 // spell ID는 확장팩마다 바뀌므로 이름 기반.
 // (tree, spec) 페어마다 별도 엔트리. 한 트리가 여러 스펙에서 쓰이면 중복 등록.
 
+import { devLog } from "../../debug";
+
 /** 영웅특성 트리 정의 */
 export interface HeroTalentTree {
   /** 영문 공식명 (WCL 응답과 매칭) */
@@ -284,7 +286,7 @@ export function detectHeroTalent(
       "annihilat", "harvest", "sentinel", "chrono", "oracle", "lightsmith",
       "farseer", "harmony", "grove", "elune", "san'layn", "vampir"];
     const suspicious = [...lowerNames].filter(n => heroKeywords.some(kw => n.includes(kw))).slice(0, 20);
-    console.log(`[detectHeroTalent] ${className} 매칭 실패. 후보 스킬:`, suspicious.join(", "));
+    devLog(`[detectHeroTalent] ${className} 매칭 실패. 후보 스킬:`, suspicious.join(", "));
   }
 
   return "";

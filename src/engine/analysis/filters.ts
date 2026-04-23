@@ -6,6 +6,7 @@
 // spell ID는 확장팩마다 바뀌므로 **이름 기반**으로 필터링.
 
 import type { WCLCastEvent } from "../wcl/api";
+import { devLog } from "../../debug";
 
 /** 패시브/자원/자동 이벤트로 판별할 이름 패턴 (소문자) */
 const PASSIVE_NAME_PATTERNS = [
@@ -44,7 +45,7 @@ export function filterPassiveCasts(casts: WCLCastEvent[]): WCLCastEvent[] {
     if (!hasCastEvent.has(id)) begincastOnly.add(id);
   }
   if (begincastOnly.size > 0) {
-    console.log("[filter] begincast만 있는 스킬:", [...begincastOnly].join(", "));
+    devLog("[filter] begincast만 있는 스킬:", [...begincastOnly].join(", "));
   }
 
   const filtered = casts.filter(c => {
@@ -74,7 +75,7 @@ export function filterPassiveCasts(casts: WCLCastEvent[]): WCLCastEvent[] {
         removedNames.set(c.abilityName, (removedNames.get(c.abilityName) ?? 0) + 1);
       }
     }
-    console.log(`[filter] 제거됨 ${removed}건:`, [...removedNames.entries()].map(([n, c]) => `${n}(${c})`).join(", "));
+    devLog(`[filter] 제거됨 ${removed}건:`, [...removedNames.entries()].map(([n, c]) => `${n}(${c})`).join(", "));
   }
 
   // 다단히트 중복 제거: 같은 abilityName이 0.5초 이내에 반복되면 첫 번째만 유지
@@ -93,7 +94,7 @@ export function filterPassiveCasts(casts: WCLCastEvent[]): WCLCastEvent[] {
   }
 
   if (deduped.length < filtered.length) {
-    console.log(`[filter] 다단히트 중복 제거: ${filtered.length} → ${deduped.length} (${filtered.length - deduped.length}건 제거)`);
+    devLog(`[filter] 다단히트 중복 제거: ${filtered.length} → ${deduped.length} (${filtered.length - deduped.length}건 제거)`);
   }
 
   return deduped;
