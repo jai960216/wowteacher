@@ -16,7 +16,7 @@ import { detectHeroTalent } from "../specs/heroTalents";
 import { EXTERNAL_BUFFS, EXTERNAL_BUFF_SPELL_IDS, EXTERNAL_SPELL_TO_LABEL } from "../externalBuffs";
 import type {
   FullAnalysis, GearComparison, DamageAnalysis, HealingAnalysis, DamageBreakdownEntry,
-  ResourceAnalysis, CooldownUsage, WCLDamageEvent, WCLHealEvent, WCLCombatantInfo, GearItem,
+  CooldownUsage, WCLDamageEvent, WCLHealEvent, WCLCombatantInfo, GearItem,
   HealingTableEntry,
 } from "./types";
 
@@ -149,9 +149,6 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
     refUses: cd.refTimings.length,
   }));
 
-  // 8) 자원 관리
-  const resources = buildResourceAnalysis(myResources, refResources, input.myFight.startTime);
-
   // 8.5) 오라 (버프/디버프) 가동 구간
   const myAuras = buildAuraTimeline(myBuffs, input.myFight.startTime, input.myFight.endTime, myAbilityMap);
   const refAuras = buildAuraTimeline(refBuffs, input.refFight.startTime, input.refFight.endTime, refAbilityMap);
@@ -223,7 +220,7 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
 
   // 12) 개선 제안 (패턴 인사이트 포함)
   const suggestions = [
-    ...generateSuggestions(uptime, cooldowns, resources, damage, gear),
+    ...generateSuggestions(uptime, cooldowns, damage, gear),
     ...patterns.insights,
   ];
   const order = { high: 0, medium: 1, low: 2 };
@@ -255,7 +252,6 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
     uptime,
     cooldowns,
     timeline,
-    resources,
     myAuras,
     refAuras,
     patterns,
@@ -500,54 +496,9 @@ function buildHealingBreakdown(
   return buildDamageBreakdown(myTable, refTable);
 }
 
-function buildResourceAnalysis(
-  myRes: { timestamp: number; resourceAmount: number; waste: number; resourceType: number }[],
-  refRes: { timestamp: number; resourceAmount: number; waste: number; resourceType: number }[],
-  myFightStart: number,
-): ResourceAnalysis {
-  const myWaste = myRes.reduce((s, e) => s + (e.waste ?? 0), 0);
-  const refWaste = refRes.reduce((s, e) => s + (e.waste ?? 0), 0);
-  const myGen = myRes.reduce((s, e) => s + (e.waste ?? 0) + Math.max(0, e.resourceAmount ?? 0), 0);
-  const refGen = refRes.reduce((s, e) => s + (e.waste ?? 0) + Math.max(0, e.resourceAmount ?? 0), 0);
-
-  // 자원 만땅 구간 감지
-  const cappedMoments: ResourceAnalysis["cappedMoments"] = [];
-  let cappedStart: number | null = null;
-  for (const e of myRes) {
-    const t = (e.timestamp - myFightStart) / 1000;
-    if (e.resourceAmount >= 100) { // 대략적 만땅 기준
-      if (cappedStart === null) cappedStart = t;
-    } else {
-      if (cappedStart !== null && t - cappedStart > 1) {
-        cappedMoments.push({ timestamp: cappedStart, duration: t - cappedStart });
-      }
-      cappedStart = null;
-    }
-  }
-
-  // 자원 타입 이름
-  const resType = myRes.length > 0 ? RESOURCE_NAMES[myRes[0].resourceType] ?? "Resource" : "Resource";
-
-  return {
-    resourceType: resType,
-    totalWasted: myWaste,
-    wastePercent: myGen > 0 ? Math.round((myWaste / myGen) * 1000) / 10 : 0,
-    refWastePercent: refGen > 0 ? Math.round((refWaste / refGen) * 1000) / 10 : 0,
-    cappedMoments,
-  };
-}
-
-const RESOURCE_NAMES: Record<number, string> = {
-  0: "Mana", 1: "Rage", 2: "Focus", 3: "Energy", 4: "Combo Points",
-  5: "Runes", 6: "Runic Power", 7: "Soul Shards", 8: "Astral Power",
-  9: "Holy Power", 11: "Maelstrom", 12: "Chi", 13: "Insanity",
-  16: "Arcane Charges", 17: "Fury", 18: "Pain", 19: "Essence",
-};
-
 function generateSuggestions(
   uptime: FullAnalysis["uptime"],
   _cooldowns: CooldownUsage[],
-  resources: ResourceAnalysis,
   damage: DamageAnalysis,
   gear: GearComparison,
 ): FullAnalysis["suggestions"] {
@@ -586,12 +537,6 @@ function generateSuggestions(
   if (Math.abs(uptime.uptimeDiff) > 2) {
     s.push({ priority: Math.abs(uptime.uptimeDiff) > 5 ? "high" : "medium", category: "가동률",
       message: `${uptime.uptimePercent.toFixed(1)}% vs ${uptime.refUptimePercent.toFixed(1)}% (차이 ${uptime.uptimeDiff > 0 ? "+" : ""}${uptime.uptimeDiff.toFixed(1)}%p, 빈 구간 ${uptime.deadZones.length}회)` });
-  }
-
-  // 자원
-  if (resources.wastePercent > 5 || resources.refWastePercent > 5) {
-    s.push({ priority: "low", category: "자원",
-      message: `${resources.resourceType} 낭비율 ${resources.wastePercent}% vs ${resources.refWastePercent}%` });
   }
 
   return s;

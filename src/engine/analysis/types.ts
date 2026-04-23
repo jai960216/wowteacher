@@ -118,18 +118,6 @@ export interface DamageBreakdownEntry {
   refHits: number;
 }
 
-/** 자원 관리 */
-export interface ResourceAnalysis {
-  resourceType: string;
-  totalWasted: number;
-  wastePercent: number;
-  refWastePercent: number;
-  cappedMoments: Array<{
-    timestamp: number;
-    duration: number;
-  }>;
-}
-
 /** 종합 분석 결과 */
 export interface FullAnalysis {
   playerName: string;
@@ -178,9 +166,6 @@ export interface FullAnalysis {
 
   // 캐스트 타임라인 (순서 + 자원 + 버프)
   timeline: TimelineEntry[];
-
-  // 자원
-  resources: ResourceAnalysis;
 
   // 대상별 피해 분석
   targetBreakdown: {

@@ -116,7 +116,7 @@ export function analyzePatterns(
   const metaUsage = buildMetaUsage(mySnapshots, refSnapshots);
 
   // 인사이트
-  const insights = generateInsights(preGapPatterns, opener, metaUsage);
+  const insights = generateInsights(preGapPatterns, metaUsage);
 
   return { opener, byState, preGapPatterns, metaUsage, insights };
 }
@@ -257,7 +257,6 @@ function findPreGapPatterns(snapshots: CastSnapshot[]): PatternAnalysis["preGapP
 
 function generateInsights(
   preGaps: PatternAnalysis["preGapPatterns"],
-  opener: PatternAnalysis["opener"],
   metaUsage: PatternAnalysis["metaUsage"],
 ): PatternAnalysis["insights"] {
   const insights: PatternAnalysis["insights"] = [];
@@ -272,18 +271,6 @@ function generateInsights(
   if (preGaps.length > 0) {
     insights.push({ priority: preGaps.length > 3 ? "high" : "low", category: "빈 시간",
       message: `2초+ 빈 구간 ${preGaps.length}회` });
-  }
-
-  // 오프너
-  if (opener.my.length >= 5 && opener.ref.length >= 5) {
-    let diffs = 0;
-    const len = Math.min(opener.my.length, opener.ref.length);
-    for (let i = 0; i < len; i++) {
-      if (opener.my[i].spellId !== opener.ref[i].spellId) diffs++;
-    }
-    if (diffs > 0) {
-      insights.push({ priority: "low", category: "오프너", message: `첫 ${len} GCD 중 ${diffs}개 차이` });
-    }
   }
 
   const order = { high: 0, medium: 1, low: 2 };

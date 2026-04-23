@@ -821,7 +821,7 @@ function AnalysisView({ analysis, spellMeta, cColor, activeTab, setActiveTab,
 function SuggestionsTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMeta: Record<number, SpellMeta> }) {
   const categoryColors: Record<string, string> = {
     DPS: "#ef4444", 장비: "#3b82f6", 스탯: "#f59e0b", 가동률: "#22d3ee",
-    자원: "#a78bfa", 탈태: "#c084fc", "빈 시간": "#f87171", 오프너: "#4ade80",
+    탈태: "#c084fc", "빈 시간": "#f87171",
   };
   const s = analysis.suggestions;
 

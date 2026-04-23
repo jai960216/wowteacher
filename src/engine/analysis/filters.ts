@@ -109,11 +109,3 @@ export function extractSoulFragmentEvents(casts: WCLCastEvent[]): WCLCastEvent[]
   });
 }
 
-/**
- * spell 이름으로 패시브 여부 확인
- */
-export function isPassiveByName(name: string): boolean {
-  const lower = name.toLowerCase().trim();
-  if (PASSIVE_EXACT_NAMES.has(lower)) return true;
-  return PASSIVE_NAME_PATTERNS.some(p => lower.includes(p));
-}
