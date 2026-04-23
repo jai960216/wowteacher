@@ -141,6 +141,14 @@ export interface FullAnalysis {
   myIlvlPercentile: number;   // 내 ilvl 퍼센타일 (0 = 데이터 없음)
   refIlvlPercentile: number;  // 상대 ilvl 퍼센타일
 
+  // 진단용 — 분석 결과에서 원본 리포트·fight·actor id 참조. WCL 사이트 URL 생성 및 데이터 비교용.
+  myReportCode: string;
+  myFightID: number;
+  myPlayerId: number;
+  refReportCode: string;
+  refFightID: number;
+  refPlayerId: number;
+
   /** 힐러 모드 여부 (true이면 healing/healingBreakdown 사용, false이면 damage/damageBreakdown) */
   isHealer: boolean;
 

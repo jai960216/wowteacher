@@ -145,7 +145,8 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
   // 8.5) 오라 (버프/디버프) 가동 구간
   const myAuras = buildAuraTimeline(myBuffs, input.myFight.startTime, input.myFight.endTime, myAbilityMap);
   const refAuras = buildAuraTimeline(refBuffs, input.refFight.startTime, input.refFight.endTime, refAbilityMap);
-  console.log(`[analysis] 오라: 나 ${myAuras.length}종, 상대 ${refAuras.length}종`);
+  console.log(`[analysis] 오라: 나 ${myAuras.length}종 (raw ${myBuffs.length}이벤트), 상대 ${refAuras.length}종 (raw ${refBuffs.length}이벤트)`);
+  console.log(`[analysis] 리포트 참조: my=${input.myReport.code}:${input.myFight.id}(player=${input.myPlayerId}) ref=${input.refReportCode}:${input.refFight.id}(player=${input.refPlayerId})`);
 
   // 9) 패턴 분석 (딜사이클, 자원별 습관, 시퀀스)
   const patterns = analyzePatterns(mySnapshots, refSnapshots);
@@ -194,6 +195,12 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
     refHeroSpec: detectedRefHero,
     myIlvlPercentile,
     refIlvlPercentile,
+    myReportCode: input.myReport.code,
+    myFightID: input.myFight.id,
+    myPlayerId: input.myPlayerId,
+    refReportCode: input.refReportCode,
+    refFightID: input.refFight.id,
+    refPlayerId: input.refPlayerId,
     isHealer: input.isHealer,
     gear,
     damage,

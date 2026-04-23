@@ -1062,7 +1062,13 @@ function GearTab({ analysis, rankings, refSpec, statScan, setStatScan, statScanL
       <ConsumablesSection myAuras={g.myAuras} refAuras={g.refAuras} />
 
       {/* 외부 버프 Uptime (마주/칠흑/예지 등) — WCL 방식: 항상 표시, 매칭 안 된 버프는 raw 목록으로 */}
-      <ExternalBuffsSection myAuras={analysis.myAuras} refAuras={analysis.refAuras} />
+      <ExternalBuffsSection
+        myAuras={analysis.myAuras}
+        refAuras={analysis.refAuras}
+        refReportCode={analysis.refReportCode}
+        refFightID={analysis.refFightID}
+        refPlayerId={analysis.refPlayerId}
+      />
 
       {/* 장비 리스트 — Wowhead 툴팁 연동 */}
       <div className="wcl-card p-4">
@@ -1184,9 +1190,12 @@ function ConsumablesSection({ myAuras, refAuras }: { myAuras: GearAura[]; refAur
   );
 }
 
-function ExternalBuffsSection({ myAuras, refAuras }: {
+function ExternalBuffsSection({ myAuras, refAuras, refReportCode, refFightID, refPlayerId }: {
   myAuras: AuraInfo[];
   refAuras: AuraInfo[];
+  refReportCode: string;
+  refFightID: number;
+  refPlayerId: number;
 }) {
   const [showDiag, setShowDiag] = useState(false);
   const got = (auras: AuraInfo[], cfg: typeof EXTERNAL_BUFFS[number]) =>
@@ -1229,6 +1238,15 @@ function ExternalBuffsSection({ myAuras, refAuras }: {
       </div>
       {showDiag && (
         <div className="mt-4 pt-3" style={{ borderTop: "1px solid #1c1c30" }}>
+          <div className="text-[10px] text-gray-500 mb-2">
+            분석한 상대 fight: <span className="font-mono text-gray-400">{refReportCode}:fight={refFightID} (actor={refPlayerId})</span>
+            {" · "}
+            <a href={`https://ko.warcraftlogs.com/reports/${refReportCode}?fight=${refFightID}&type=auras&source=${refPlayerId}`}
+              target="_blank" rel="noopener noreferrer"
+              className="underline text-purple-400 hover:text-purple-300">
+              WCL Buffs 탭 열기 ↗
+            </a>
+          </div>
           <div className="text-[10px] text-gray-500 mb-2">
             실제 감지된 aura (uptime 내림차순). 외부 버프가 X로 떴는데 여기 이름이 있으면 spell ID 알려주세요.
           </div>
