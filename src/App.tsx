@@ -3,7 +3,7 @@ import { isAuthenticated, startAuth, handleCallback, logout } from "./engine/wcl
 import { subscribeRateLimit, getRateLimitSnapshot } from "./engine/wcl/rateLimit";
 import {
   getMyCharacters, searchCharacter, getReportInfo, getEncounterRankings, getFightPlayerIds, getMyEncounterRankings,
-  getFightTime, getBuffsTable, getExternalBuffEvents, EXTERNAL_KEYWORD_RE,
+  getFightTime, getBuffsTable, getExternalBuffEvents,
   CLASS_NAMES_KR, CLASS_COLORS, DIFFICULTY_NAMES, DIFFICULTY_COLORS,
   getClassIconUrl, getPercentileColor,
   type WCLReportInfo, type WCLRanking, type WCLFight, type ZoneRankingData,
@@ -577,12 +577,8 @@ function RateLimitBadge() {
 interface BuffCacheEntry {
   loading: boolean;
   error?: string;
-  buffs?: Array<{ cfg: typeof EXTERNAL_BUFFS[number]; count: number; uptimePercent: number }>;
-  // WCL 방식: 매칭 안 된 모든 buff도 raw로 저장. 사용자가 실제 이름 확인 가능.
-  allBuffs?: Array<{ spellId: number; name: string; icon: string; totalUses: number; uptimePercent: number }>;
-  // PI/EM/Prescience 계열 키워드 hit했으나 EXTERNAL_BUFFS ID에 없는 항목 — 신규 ID 후보 자동 노출.
-  // 마주가 3번 걸려서 uptime 10% 근처면 Top20 밖이라 로그로 안 보일 수 있음 → UI에 노출.
-  candidates?: Array<{ spellId: number; name: string; icon: string; totalUses: number; uptimePercent: number }>;
+  // 각 외부 버프(마주/칠흑/예지)를 받았는지 여부만. 표시는 O/X 심플 체크.
+  received?: Record<string, boolean>; // key = cfg.label
 }
 
 function RankingsView({ rankings, selectedFight, cName, classID, className, metric, onMetricChange, onAnalysis }: {
@@ -597,7 +593,6 @@ function RankingsView({ rankings, selectedFight, cName, classID, className, metr
 }) {
   const [specFilter, setSpecFilter] = useState<string>("all");
   const [bufCache, setBufCache] = useState<Map<string, BuffCacheEntry>>(new Map());
-  const [showAllBuffsKey, setShowAllBuffsKey] = useState<string | null>(null);
 
   // 특성별 수집
   const specCounts = new Map<string, number>();
@@ -636,7 +631,7 @@ function RankingsView({ rankings, selectedFight, cName, classID, className, metr
         ?? report.players.find(p => norm(p.name) === rName);
       if (!player) throw new Error(`${r.name} 플레이어를 리포트에서 찾을 수 없음`);
       // table(Buffs)는 외부 시전 buff 집계 누락 (WCL 알려진 이슈). events로 보정.
-      // 관심 ID들(EXTERNAL_BUFFS.ids 평탄화)을 filterExpression으로 명시 쿼리 → applybuff 카운트 정확.
+      // 관심 ID들을 filterExpression으로 명시 쿼리 → 받았는지 여부만 확정.
       const externalIds = [...new Set(EXTERNAL_BUFFS.flatMap(c => c.ids))];
       const [table, eventResults] = await Promise.all([
         getBuffsTable(r.reportCode, player.id, fight.startTime, fight.endTime),
@@ -644,36 +639,16 @@ function RankingsView({ rankings, selectedFight, cName, classID, className, metr
       ]);
       const eventMap = new Map(eventResults.map(e => [e.spellId, e]));
 
-      const matchedIds = new Set<number>();
-      const ext = EXTERNAL_BUFFS.map(cfg => {
-        // 1차: events 결과(ID 명시 쿼리) — 외부 시전 buff 정확 카운트.
-        // 같은 cfg에 구·신 ID가 공존(예: PI 37274/10060) — 둘 다 hit하면 count는 합산,
-        // uptime은 overlap 가능성으로 합치면 100% 초과 위험이라 max 유지(실제로는 한쪽만 잡힘).
-        let count = 0, uptimePercent = 0;
-        for (const id of cfg.ids) {
-          const ev = eventMap.get(id);
-          if (ev && ev.applyCount > 0) {
-            count += ev.applyCount;
-            uptimePercent = Math.max(uptimePercent, ev.uptimePercent);
-            matchedIds.add(id);
-          }
-        }
-        // 2차 fallback: table (name 매칭으로 구버전 ID/변종 감지)
-        if (count === 0) {
-          const hit = table.find(b => cfg.ids.includes(b.spellId) || cfg.nameKeywords.test(b.name));
-          if (hit) {
-            count = hit.totalUses;
-            uptimePercent = hit.uptimePercent;
-            matchedIds.add(hit.spellId);
-          }
-        }
-        return { cfg, count, uptimePercent };
-      });
-      // 후보: table에서 키워드 hit했으나 아직 매칭 안 된 항목 — 신규 ID 탐지용.
-      const candidates = table.filter(b =>
-        EXTERNAL_KEYWORD_RE.test(b.name) && !matchedIds.has(b.spellId)
-      );
-      setBufCache(prev => new Map(prev).set(key, { loading: false, buffs: ext, allBuffs: table, candidates }));
+      const received: Record<string, boolean> = {};
+      for (const cfg of EXTERNAL_BUFFS) {
+        // 1차: events 결과의 ID 매칭. 2차 fallback: table의 ID/이름 매칭 (구 리포트 호환).
+        const gotEvent = cfg.ids.some(id => (eventMap.get(id)?.applyCount ?? 0) > 0);
+        const gotTable = !gotEvent && table.some(b =>
+          cfg.ids.includes(b.spellId) || cfg.nameKeywords.test(b.name)
+        );
+        received[cfg.label] = gotEvent || gotTable;
+      }
+      setBufCache(prev => new Map(prev).set(key, { loading: false, received }));
     } catch (e) {
       setBufCache(prev => new Map(prev).set(key, { loading: false, error: e instanceof Error ? e.message : String(e) }));
     }
@@ -764,86 +739,40 @@ function RankingsView({ rankings, selectedFight, cName, classID, className, metr
           {filtered.map((r, i) => {
             const key = rankKey(r);
             const cacheEntry = bufCache.get(key);
-            const showAll = showAllBuffsKey === key;
             return (
-              <Fragment key={`${r.name}-${r.server}-${i}`}>
-                <div className="wcl-table-row w-full grid grid-cols-[30px_1fr_140px_90px_60px_1fr] px-3 py-2.5 items-center text-left cursor-pointer"
-                  onClick={() => onAnalysis(r)}>
-                  <div className="text-xs font-bold font-mono" style={{ color: i === 0 ? "#ffd700" : i < 3 ? "#c0c0c0" : "#888" }}>{i + 1}</div>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-xs text-white truncate">{r.name}</span>
-                    <span className="text-[10px] text-gray-600 truncate">{r.server}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[10px] text-gray-400 min-w-0">
-                    {(() => { const ic = specIconFor(r.spec); return ic ? <img src={ic} alt="" className="w-4 h-4 rounded-sm flex-shrink-0" onError={e => (e.currentTarget.style.display = "none")} /> : null; })()}
-                    <div className="flex flex-col leading-tight min-w-0">
-                      <span className="text-gray-300 truncate">{specNameKr(r.spec)}</span>
-                      {r.heroTalent && <span className="text-[9px] truncate" style={{ color: "#a78bfa" }}>{specNameKr(r.heroTalent)}</span>}
-                    </div>
-                  </div>
-                  <div className="text-right text-xs font-mono" style={{ color: "#a78bfa" }}>{fmtDPS(r.amount)}</div>
-                  <div className="text-right text-[11px] text-gray-500 font-mono">{fmtDur(r.duration)}</div>
-                  {/* 외부 버프 인라인 표시 — 자동 로드, 접기 없음 */}
-                  <div className="flex justify-end items-center gap-1.5 min-w-0" onClick={(e) => e.stopPropagation()}>
-                    {cacheEntry?.loading && (
-                      <div className="w-3 h-3 border-2 border-gray-700 border-t-purple-500 rounded-full animate-spin" />
-                    )}
-                    {cacheEntry?.error && <span className="text-[10px] text-red-400 truncate">에러</span>}
-                    {cacheEntry?.buffs && (
-                      <div className="flex items-center gap-1.5">
-                        {cacheEntry.buffs.map(({ cfg, count, uptimePercent }) => {
-                          const received = count > 0;
-                          return (
-                            <div key={cfg.label} className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]"
-                              style={received
-                                ? { background: cfg.color + "20", border: `1px solid ${cfg.color}55`, color: cfg.color }
-                                : { background: "#131320", border: "1px solid #2a2a40", color: "#4a4a5a" }}
-                              title={`${cfg.label}: ${received ? `${count}회 · ${uptimePercent}%` : "미수령"}`}>
-                              <span className="font-bold">{cfg.short}</span>
-                              {received ? <span className="font-mono">{uptimePercent}%</span> : <span>—</span>}
-                            </div>
-                          );
-                        })}
-                        <button onClick={() => setShowAllBuffsKey(showAll ? null : key)}
-                          className="text-[10px] px-1.5 py-0.5 rounded hover:brightness-125"
-                          style={{ background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}
-                          title="전체 외부 버프 목록 (WCL 사이트처럼 받은 버프 전부 나열)">
-                          전체{showAll ? "▲" : "▼"}
-                        </button>
-                      </div>
-                    )}
+              <div key={`${r.name}-${r.server}-${i}`}
+                className="wcl-table-row w-full grid grid-cols-[30px_1fr_140px_90px_60px_1fr] px-3 py-2.5 items-center text-left cursor-pointer"
+                onClick={() => onAnalysis(r)}>
+                <div className="text-xs font-bold font-mono" style={{ color: i === 0 ? "#ffd700" : i < 3 ? "#c0c0c0" : "#888" }}>{i + 1}</div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs text-white truncate">{r.name}</span>
+                  <span className="text-[10px] text-gray-600 truncate">{r.server}</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px] text-gray-400 min-w-0">
+                  {(() => { const ic = specIconFor(r.spec); return ic ? <img src={ic} alt="" className="w-4 h-4 rounded-sm flex-shrink-0" onError={e => (e.currentTarget.style.display = "none")} /> : null; })()}
+                  <div className="flex flex-col leading-tight min-w-0">
+                    <span className="text-gray-300 truncate">{specNameKr(r.spec)}</span>
+                    {r.heroTalent && <span className="text-[9px] truncate" style={{ color: "#a78bfa" }}>{specNameKr(r.heroTalent)}</span>}
                   </div>
                 </div>
-                {/* 매칭 실패 후보 자동 노출 — PI/EM/Presc 키워드 hit했으나 EXTERNAL_BUFFS ID 누락 */}
-                {cacheEntry?.candidates && cacheEntry.candidates.length > 0 && (
-                  <div className="px-4 py-1.5 flex items-center gap-2 text-[10px] flex-wrap"
-                    style={{ background: "#2a1e0520", borderBottom: "1px solid #1c1c30" }}>
-                    <span className="text-amber-400 font-semibold">⚠ 외부 버프 후보 (ID 미등록):</span>
-                    {cacheEntry.candidates.map(c => (
-                      <span key={`${c.spellId}-${c.name}`} className="text-amber-200 font-mono" title={`spell ID #${c.spellId}`}>
-                        {c.name} <span className="text-amber-400/60">(#{c.spellId} · {c.totalUses}회 · {c.uptimePercent}%)</span>
+                <div className="text-right text-xs font-mono" style={{ color: "#a78bfa" }}>{fmtDPS(r.amount)}</div>
+                <div className="text-right text-[11px] text-gray-500 font-mono">{fmtDur(r.duration)}</div>
+                {/* 외부 버프: O/X 심플 표시 */}
+                <div className="flex justify-end items-center gap-2 text-[11px] font-mono">
+                  {cacheEntry?.loading && (
+                    <div className="w-3 h-3 border-2 border-gray-700 border-t-purple-500 rounded-full animate-spin" />
+                  )}
+                  {cacheEntry?.error && <span className="text-[10px] text-red-400">에러</span>}
+                  {cacheEntry?.received && EXTERNAL_BUFFS.map(cfg => {
+                    const got = cacheEntry.received![cfg.label];
+                    return (
+                      <span key={cfg.label} style={{ color: got ? cfg.color : "#3a3a4a" }}>
+                        {cfg.short} {got ? "O" : "X"}
                       </span>
-                    ))}
-                  </div>
-                )}
-                {/* "전체 외부 버프" 확장 행 — 매칭 누락된 버프 확인용 */}
-                {showAll && cacheEntry?.allBuffs && (
-                  <div className="px-4 py-3" style={{ background: "linear-gradient(90deg, #0d0a1a, #0f0a20)", borderBottom: "1px solid #1c1c30", borderTop: "1px solid #2a1e4a" }}>
-                    <div className="text-[10px] text-gray-500 mb-2">
-                      해당 플레이어에게 걸린 전체 외부 버프 ({cacheEntry.allBuffs.length}종, uptime 내림차순)
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-x-3 gap-y-1">
-                      {[...cacheEntry.allBuffs].sort((a, b) => b.uptimePercent - a.uptimePercent).map((b) => (
-                        <div key={`${b.spellId}-${b.name}`} className="flex items-center gap-1.5 text-[10px]">
-                          {b.icon && <img src={`${ICON_BASE}/${b.icon}.jpg`} alt="" className="w-4 h-4 rounded-sm" onError={ev => (ev.currentTarget.style.display = "none")} />}
-                          <span className="text-gray-300 truncate flex-1" title={`#${b.spellId}`}>{b.name}</span>
-                          <span className="text-gray-500 font-mono">{b.uptimePercent}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </Fragment>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
         </div>
@@ -1350,99 +1279,28 @@ function ExternalBuffsSection({ myAuras, refAuras }: {
   myAuras: AuraInfo[];
   refAuras: AuraInfo[];
 }) {
-  const [showAll, setShowAll] = useState(false);
-
-  const findAura = (auras: typeof myAuras, cfg: typeof EXTERNAL_BUFFS[number]) =>
-    auras.find(a => cfg.ids.includes(a.spellId) || cfg.nameKeywords.test(a.name));
-
-  const rows = EXTERNAL_BUFFS.map(cfg => ({
-    cfg,
-    my: findAura(myAuras, cfg),
-    ref: findAura(refAuras, cfg),
-  }));
-
-  // 콘솔 덤프 — 사용자가 실제 ID/이름 확인용
-  useEffect(() => {
-    const dump = (label: string, auras: typeof myAuras) => {
-      const top = [...auras].sort((a, b) => b.uptimePercent - a.uptimePercent).slice(0, 30);
-      console.log(`[ExternalBuffs] ${label} Top30 aura:`, top.map(a => `${a.name}(#${a.spellId}) ${a.uptimePercent}%`).join(" | "));
-    };
-    dump("나", myAuras);
-    dump("상대", refAuras);
-  }, [myAuras, refAuras]);
+  // 받았는지 여부만 체크. uptime/count 같은 디테일 제거.
+  const got = (auras: AuraInfo[], cfg: typeof EXTERNAL_BUFFS[number]) =>
+    auras.some(a => cfg.ids.includes(a.spellId) || cfg.nameKeywords.test(a.name));
 
   return (
     <div className="wcl-card p-4">
-      <div className="flex items-center justify-between mb-1">
-        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">외부 버프 가동률</h3>
-        <button onClick={() => setShowAll(s => !s)}
-          className="text-[10px] px-2 py-0.5 rounded hover:brightness-125"
-          style={{ background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}
-          title="매칭 누락 가능성 확인용. 모든 활성 오라를 uptime 순으로 나열.">
-          전체 버프 목록 {showAll ? "▲" : "▼"}
-        </button>
-      </div>
-      <p className="text-[10px] text-gray-600 mb-3">상위권 비교 시 핵심 지표. 전투 전체 기준 uptime.</p>
-      <div className="space-y-2">
-        {rows.map(({ cfg, my, ref }) => {
-          const myUp = my?.uptimePercent ?? 0;
-          const refUp = ref?.uptimePercent ?? 0;
-          const myCount = my?.windows.length ?? 0;
-          const refCount = ref?.windows.length ?? 0;
-          const faded = !my && !ref;
+      <h3 className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">외부 버프 수령</h3>
+      <div className="grid grid-cols-[100px_60px_60px] gap-3 items-center text-[11px]">
+        <div />
+        <div className="text-center text-gray-500">나</div>
+        <div className="text-center text-gray-500">상대</div>
+        {EXTERNAL_BUFFS.map(cfg => {
+          const mine = got(myAuras, cfg);
+          const theirs = got(refAuras, cfg);
           return (
-            <div key={cfg.label} className="grid grid-cols-[80px_1fr_1fr] gap-3 items-center" style={faded ? { opacity: 0.45 } : {}}>
-              <span className="text-[11px] font-semibold" style={{ color: cfg.color }}>{cfg.label}</span>
-              <div>
-                <div className="flex items-center justify-between text-[10px] mb-0.5">
-                  <span className="text-gray-400">나</span>
-                  <span className="text-white font-mono">{my ? `${myUp}%` : "—"} <span className="text-gray-500">({myCount}회)</span></span>
-                </div>
-                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#0d0d15" }}>
-                  <div className="h-full rounded-full" style={{ width: `${myUp}%`, background: cfg.color }} />
-                </div>
-              </div>
-              <div>
-                <div className="flex items-center justify-between text-[10px] mb-0.5">
-                  <span className="text-gray-400">상대</span>
-                  <span className="text-white font-mono">{ref ? `${refUp}%` : "—"} <span className="text-gray-500">({refCount}회)</span></span>
-                </div>
-                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#0d0d15" }}>
-                  <div className="h-full rounded-full" style={{ width: `${refUp}%`, background: cfg.color, opacity: 0.6 }} />
-                </div>
-              </div>
-            </div>
+            <Fragment key={cfg.label}>
+              <div className="font-semibold" style={{ color: cfg.color }}>{cfg.label}</div>
+              <div className="text-center font-mono font-bold" style={{ color: mine ? cfg.color : "#3a3a4a" }}>{mine ? "O" : "X"}</div>
+              <div className="text-center font-mono font-bold" style={{ color: theirs ? cfg.color : "#3a3a4a" }}>{theirs ? "O" : "X"}</div>
+            </Fragment>
           );
         })}
-      </div>
-      {showAll && (
-        <div className="mt-4 pt-3" style={{ borderTop: "1px solid #1c1c30" }}>
-          <div className="text-[10px] text-gray-500 mb-2">
-            전체 활성 오라 (uptime ≥ 5% 필터, 내림차순). 위 매칭에서 놓친 버프가 여기 보이면 실제 이름·ID 알려주세요.
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <AuraFullList label="나" auras={myAuras} />
-            <AuraFullList label="상대" auras={refAuras} />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AuraFullList({ label, auras }: { label: string; auras: AuraInfo[] }) {
-  const sorted = [...auras].filter(a => a.uptimePercent >= 5).sort((a, b) => b.uptimePercent - a.uptimePercent);
-  return (
-    <div>
-      <div className="text-[10px] font-semibold mb-1" style={{ color: label === "나" ? "#a78bfa" : "#fbbf24" }}>{label}</div>
-      <div className="space-y-0.5">
-        {sorted.length === 0 && <div className="text-[10px] text-gray-700">없음</div>}
-        {sorted.map(a => (
-          <div key={a.spellId} className="flex items-center gap-1.5 text-[10px]">
-            <span className="text-gray-300 truncate flex-1" title={`#${a.spellId}`}>{a.name}</span>
-            <span className="text-gray-500 font-mono">{a.uptimePercent}%</span>
-          </div>
-        ))}
       </div>
     </div>
   );
