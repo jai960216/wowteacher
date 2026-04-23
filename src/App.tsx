@@ -895,13 +895,15 @@ const CONSUMABLE_CATEGORIES: Array<{ label: string; ids: number[]; test: (name: 
   },
   {
     label: "무기 강화",
-    ids: [1265808, 1260615, 1264426],
-    test: (n) => /\boil\b|whetstone|sharpening stone|weightstone|\bplume\b|기름|숫돌|부싯돌/i.test(n),
+    // Thalassian Phoenix Oil (item 243734): spell 1236491 / 1237006 / 1237008 중 하나로 기록
+    ids: [1236491, 1237006, 1237008],
+    test: (n) => /thalassian|phoenix oil|\boil\b|whetstone|sharpening stone|weightstone|기름|숫돌|부싯돌/i.test(n),
   },
   {
     label: "증강 룬",
-    ids: [393438, 1234969, 1276685, 1277389, 1276709, 1276682],
-    test: (n) => /augment(ation|\s*rune)?|vantus\s*rune|draconic augment|증강\s*룬|증강의\s*룬/i.test(n),
+    // Void-Touched(#1264426)는 증강 룬 계열
+    ids: [393438, 1234969, 1264426, 1276685, 1277389, 1276709, 1276682],
+    test: (n) => /augment(ation|\s*rune)?|vantus\s*rune|draconic augment|void.?touched|증강\s*룬|증강의\s*룬/i.test(n),
   },
 ];
 
