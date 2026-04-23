@@ -1675,7 +1675,8 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
               { val: 120, label: "2분" },
               { val: Math.ceil(duration), label: "전체" },
             ].map(opt => {
-              const active = rangeLen === opt.val;
+              // 부동소수점 오차(drag 중 rangeLen이 60.00000001 같은 값이 됨) 무시
+              const active = Math.abs(rangeLen - opt.val) < 0.5;
               return (
                 <button key={opt.label}
                   onClick={() => setScrollRange(prev => ({ start: prev.start, end: Math.min(prev.start + opt.val, duration) }))}
