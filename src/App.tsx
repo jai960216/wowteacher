@@ -1546,7 +1546,8 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       mouseDownPrevX = curX;
       if (Math.abs(dx) < 1) return;
       const width = el.clientWidth || 1;
-      applyDelta((dx / width) * rangeLen, "move");
+      // 감도 3배 — 1:1이면 체감이 너무 느려 "고정된" 느낌을 줌
+      applyDelta((dx / width) * rangeLen * 3, "move");
     };
     const mouseUp = () => {
       if (!mouseDownActive) return;
