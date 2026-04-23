@@ -723,6 +723,57 @@ export async function searchCharacter(
   };
 }
 
+/**
+ * encounter → zone의 default partition 자동 조회 (캐시).
+ * WCL은 밸런스 패치마다 새 partition을 만들어 default를 갱신함. 하드코딩하면
+ * 시즌 후반에 사이트 랭킹과 데이터가 어긋남 (구 partition의 옛 데이터 표시).
+ * 네트워크/스키마 실패 시 1로 degrade — 랭킹 플로우 전체가 차단되지 않게.
+ */
+const partitionCache = new Map<number, Promise<number>>();
+const PARTITION_FALLBACK = 1;
+
+export function getDefaultPartition(encounterId: number): Promise<number> {
+  const cached = partitionCache.get(encounterId);
+  if (cached) return cached;
+
+  const promise = (async () => {
+    try {
+      const data: any = await query<any>(`
+        query ($id: Int!) {
+          worldData {
+            encounter(id: $id) {
+              zone {
+                id
+                partitions { id default name }
+              }
+            }
+          }
+        }
+      `, { id: encounterId });
+      const partitions: Array<{ id: number; default: boolean; name: string }> =
+        data.worldData?.encounter?.zone?.partitions ?? [];
+      const def = partitions.find(p => p.default)?.id
+        ?? (partitions.length > 0 ? Math.max(...partitions.map(p => p.id)) : PARTITION_FALLBACK);
+      if (partitions.length === 0) {
+        console.warn(`[getDefaultPartition] encounter ${encounterId}: partitions 0건, fallback=${PARTITION_FALLBACK}`);
+      } else {
+        console.log(
+          `[getDefaultPartition] encounter ${encounterId} → partition ${def}`,
+          "| 후보:", partitions.map(p => `${p.id}${p.default ? "*" : ""}:${p.name}`).join(", "),
+        );
+      }
+      return def;
+    } catch (e) {
+      console.warn(`[getDefaultPartition] encounter ${encounterId} 조회 실패, fallback=${PARTITION_FALLBACK}:`, e);
+      return PARTITION_FALLBACK;
+    }
+  })();
+
+  partitionCache.set(encounterId, promise);
+  // 성공 응답도 캐싱 (catch는 안에서 처리되므로 promise 자체는 reject 안 함)
+  return promise;
+}
+
 /** 특정 보스의 직업별 상위 랭킹 */
 export async function getEncounterRankings(
   encounterId: number,
@@ -736,18 +787,20 @@ export async function getEncounterRankings(
   if (!className) {
     console.error("[getEncounterRankings] className이 비어있음! 필터 없이 조회됨");
   }
-  console.log("[getEncounterRankings] className:", className, "encounter:", encounterId, "diff:", difficulty, "metric:", metric);
+
+  // partition은 zone마다·시즌 안에서도 밸런스 패치마다 바뀜. WCL의 default를 동적으로 따라감.
+  const partition = await getDefaultPartition(encounterId);
+  console.log("[getEncounterRankings] className:", className, "encounter:", encounterId, "diff:", difficulty, "metric:", metric, "partition:", partition);
 
   // WCL characterRankings는 className/specName을 공백 없는 CamelCase("DeathKnight")로 기대.
   // 공백 포함("Death Knight")으로 보내면 0건 반환. 공백 제거 후 서버 필터로 보내 해당 직업 상위 100명을 바로 받음.
-  // partition은 zoneRankings 루트의 값(현재 시즌 1)과 맞춰야 rankings가 비어나오지 않음.
   // metric은 CharacterRankingMetricType(lowercase 문자열 enum). "dps"가 default이며 힐러 비교 시 "hps" 사용.
   const classNoSpace = (className ?? "").replace(/\s+/g, "");
   const specNoSpace = (specName ?? "").replace(/\s+/g, "");
   const vars: Record<string, any> = {
     id: encounterId,
     page,
-    partition: 1,
+    partition,
     metric,
   };
   if (classNoSpace) vars.class = classNoSpace;

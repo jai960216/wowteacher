@@ -963,19 +963,24 @@ const SLOT_NAMES = ["머리", "목", "어깨", "셔츠", "가슴", "허리", "�
 const QUALITY_COLORS: Record<number, string> = { 1: "#fff", 2: "#1eff00", 3: "#0070dd", 4: "#a335ee", 5: "#ff8000", 6: "#e6cc80" };
 
 // 외부 딜 증가 버프 — 상위권 비교 시 핵심 지표
-// WCL 응답 이름은 보통 영문. spell ID로도 매칭.
+// 적용 버프 spell ID(시전 spell ID와 다를 수 있음). 12.0 Midnight 기준.
+// 마력 주입: 시전=10060, 적용=37274 / 칠흑의 힘=404269 / 예지=410089
+// nameRegex는 ID 매칭 실패 시 backup용이므로 정확 매칭으로 유지 (false-positive 방지).
 const EXTERNAL_BUFFS: Array<{ ids: number[]; nameRegex: RegExp; label: string; short: string; color: string }> = [
-  { ids: [10060], nameRegex: /^power infusion$|^마력 주입$/i, label: "마력 주입", short: "마주", color: "#ec4899" },
-  { ids: [395152], nameRegex: /^ebon might$|^흑요석 위세$/i, label: "흑요석 위세", short: "칠흑", color: "#f59e0b" },
+  { ids: [37274, 10060], nameRegex: /^power infusion$|^마력 주입$/i, label: "마력 주입", short: "마주", color: "#ec4899" },
+  { ids: [404269, 395152], nameRegex: /^ebon might$|^흑요석 위세$|^칠흑의 힘$/i, label: "칠흑의 힘", short: "칠흑", color: "#f59e0b" },
   { ids: [410089], nameRegex: /^prescience$|^예지$/i, label: "예지", short: "예지", color: "#22d3ee" },
 ];
 
 // 소모품 분류 — CombatantInfo.auras 이름 패턴
+// 정책: oil/rune 류는 신패치 신규 이름을 못 따라가므로 키워드 매칭으로 광범위 노출하되,
+// false-positive 방지(예: DK Runeforging "...의 룬", 드워프 Stoneform)를 위해
+// 단어 컨텍스트(augment/증강 prefix, oil 단독)는 화이트리스트화.
 const CONSUMABLE_CATEGORIES: Array<{ label: string; test: (name: string) => boolean }> = [
-  { label: "음식",       test: (n) => /well fed|식사|진수성찬/i.test(n) },
-  { label: "플라스크",   test: (n) => /^phial\b|^flask\b|^영약|^엘릭서/i.test(n) },
-  { label: "기름/돌",    test: (n) => /\boil\b|\bstone\b|whetstone|부싯돌|숫돌/i.test(n) },
-  { label: "증강 룬",    test: (n) => /augment rune|draconic augment|증강 룬/i.test(n) },
+  { label: "음식",       test: (n) => /well fed|식사|진수성찬|잘 먹음|잘먹음/i.test(n) },
+  { label: "플라스크",   test: (n) => /\bphial\b|\bflask\b|\belixir\b|영약|엘릭서/i.test(n) },
+  { label: "기름/돌",    test: (n) => /\boil\b|whetstone|sharpening stone|weightstone|기름|숫돌|부싯돌/i.test(n) },
+  { label: "증강 룬",    test: (n) => /augment\s*rune|draconic augment|증강\s*룬|증강의\s*룬/i.test(n) },
 ];
 
 function classifyConsumable(name: string): string | null {
