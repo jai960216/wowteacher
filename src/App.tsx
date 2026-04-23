@@ -893,12 +893,8 @@ const CONSUMABLE_CATEGORIES: Array<{ label: string; ids: number[]; test: (name: 
     ids: [1235111, 1235108, 1235110],
     test: (n) => /\bphial\b|\bflask\b|\belixir\b|영약|엘릭서/i.test(n),
   },
-  {
-    label: "무기 강화",
-    // Thalassian Phoenix Oil (item 243734): spell 1236491 / 1237006 / 1237008 중 하나로 기록
-    ids: [1236491, 1237006, 1237008],
-    test: (n) => /thalassian|phoenix oil|\boil\b|whetstone|sharpening stone|weightstone|기름|숫돌|부싯돌/i.test(n),
-  },
+  // 무기 강화(오일/돌)는 활성 aura가 아니라 무기의 temporaryEnchant 필드에 기록됨.
+  // 이 카테고리는 ConsumablesSection에서 gear[15]/[16].temporaryEnchant로 별도 판정.
   {
     label: "증강 룬",
     // Void-Touched(#1264426)는 증강 룬 계열
@@ -1052,7 +1048,7 @@ function GearTab({ analysis, rankings, refSpec, statScan, setStatScan, statScanL
       )}
 
       {/* 활성 소모품 — WCL 방식: 분류된 것 + 분류 안 된 것도 raw 노출 */}
-      <ConsumablesSection myAuras={g.myAuras} refAuras={g.refAuras} />
+      <ConsumablesSection myAuras={g.myAuras} refAuras={g.refAuras} myGear={g.myGear} refGear={g.refGear} />
 
       {/* 외부 버프 Uptime (마주/칠흑/예지 등) — WCL 방식: 항상 표시, 매칭 안 된 버프는 raw 목록으로 */}
       <ExternalBuffsSection
@@ -1094,16 +1090,24 @@ function GearTab({ analysis, rankings, refSpec, statScan, setStatScan, statScanL
 
 type GearAura = { ability: number; name: string; icon: string; stacks: number };
 
-function ConsumablesSection({ myAuras, refAuras }: { myAuras: GearAura[]; refAuras: GearAura[] }) {
+function ConsumablesSection({ myAuras, refAuras, myGear, refGear }: {
+  myAuras: GearAura[];
+  refAuras: GearAura[];
+  myGear: GearItem[];
+  refGear: GearItem[];
+}) {
   const [showAllMy, setShowAllMy] = useState(false);
   const [showAllRef, setShowAllRef] = useState(false);
 
-  // 콘솔 덤프 — 실제 aura 이름 확인용 (사용자가 기름/증강 미감지 시 이름 보고 정규식 보강)
+  // 콘솔 덤프 — 실제 aura 이름 확인용
   useEffect(() => {
     const names = (auras: GearAura[]) => auras.map(a => `${a.name}(#${a.ability})`).join(" | ");
     console.log("[Consumables] 나 gear.myAuras:", names(myAuras));
     console.log("[Consumables] 상대 gear.refAuras:", names(refAuras));
-  }, [myAuras, refAuras]);
+    const we = (g: GearItem[]) => [15, 16].map(s => `slot${s}: perm=${g[s]?.permanentEnchant ?? 0} temp=${g[s]?.temporaryEnchant ?? 0}`).join(" | ");
+    console.log("[Consumables] 나 주무기 enchant:", we(myGear));
+    console.log("[Consumables] 상대 주무기 enchant:", we(refGear));
+  }, [myAuras, refAuras, myGear, refGear]);
 
   if (myAuras.length === 0 && refAuras.length === 0) return null;
 
@@ -1111,7 +1115,19 @@ function ConsumablesSection({ myAuras, refAuras }: { myAuras: GearAura[]; refAur
   const myC = classify(myAuras);
   const refC = classify(refAuras);
 
-  const renderClassified = (items: ReturnType<typeof classify>) => (
+  // 무기 강화(오일/돌)는 gear의 temporaryEnchant로 판정. 주무기(15) 또는 보조무기(16) 중 하나에 있으면 O.
+  const weaponEnchantIDs = (gear: GearItem[]): number[] => {
+    const ids: number[] = [];
+    const main = gear[15]?.temporaryEnchant ?? 0;
+    const off = gear[16]?.temporaryEnchant ?? 0;
+    if (main > 0) ids.push(main);
+    if (off > 0) ids.push(off);
+    return ids;
+  };
+  const myWeaponEnchants = weaponEnchantIDs(myGear);
+  const refWeaponEnchants = weaponEnchantIDs(refGear);
+
+  const renderClassified = (items: ReturnType<typeof classify>, enchants: number[]) => (
     <div className="space-y-1">
       {CONSUMABLE_CATEGORIES.map(cat => {
         const entries = items.filter(i => i.cat === cat.label);
@@ -1129,6 +1145,13 @@ function ConsumablesSection({ myAuras, refAuras }: { myAuras: GearAura[]; refAur
           </div>
         ));
       })}
+      {/* 무기 강화 별도 행 — gear enchant 기반 */}
+      <div className="flex items-center gap-2 text-[11px]">
+        <span className="text-gray-500 w-14">무기 강화</span>
+        {enchants.length > 0
+          ? <span className="text-gray-200 font-mono">{enchants.map(id => `#${id}`).join(", ")}</span>
+          : <span className="text-gray-700 text-[10px]">미사용</span>}
+      </div>
     </div>
   );
 
@@ -1158,7 +1181,7 @@ function ConsumablesSection({ myAuras, refAuras }: { myAuras: GearAura[]; refAur
             <div className="text-[10px] font-semibold" style={{ color: "#a78bfa" }}>나 ({myAuras.length}개)</div>
             <button onClick={() => setShowAllMy(s => !s)} className="text-[9px] text-gray-500 hover:text-gray-300">기타 {showAllMy ? "▲" : "▼"}</button>
           </div>
-          {renderClassified(myC)}
+          {renderClassified(myC, myWeaponEnchants)}
           {showAllMy && (
             <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #1c1c30" }}>
               <div className="text-[9px] text-gray-600 mb-1">미분류 활성 오라</div>
@@ -1171,7 +1194,7 @@ function ConsumablesSection({ myAuras, refAuras }: { myAuras: GearAura[]; refAur
             <div className="text-[10px] font-semibold" style={{ color: "#fbbf24" }}>상대 ({refAuras.length}개)</div>
             <button onClick={() => setShowAllRef(s => !s)} className="text-[9px] text-gray-500 hover:text-gray-300">기타 {showAllRef ? "▲" : "▼"}</button>
           </div>
-          {renderClassified(refC)}
+          {renderClassified(refC, refWeaponEnchants)}
           {showAllRef && (
             <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #1c1c30" }}>
               <div className="text-[9px] text-gray-600 mb-1">미분류 활성 오라</div>
