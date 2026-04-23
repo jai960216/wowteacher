@@ -963,14 +963,15 @@ const SLOT_NAMES = ["머리", "목", "어깨", "셔츠", "가슴", "허리", "�
 const QUALITY_COLORS: Record<number, string> = { 1: "#fff", 2: "#1eff00", 3: "#0070dd", 4: "#a335ee", 5: "#ff8000", 6: "#e6cc80" };
 
 // 외부 딜 증가 버프 — 상위권 비교 시 핵심 지표
-// Midnight(12.0.5) 리워크로 증강 기원사 버프 이름·ID가 바뀜. 실 로그 덤프 기반 확정:
-//   Might of the Void(#1241715) = Ebon Might 대체. 공대별 uptime 37~75% 편차 — 외부 시전 전형.
-//   Arcanoweave Insight(#1229746) = Prescience 대체 (single-target rotating, 40~65% uptime).
-// Power Infusion은 이름 유지(섀도우 프리스트). 매칭: ID 1차, nameKeywords 2차.
+// Midnight 12.0.5 기준 ID (사용자 확인):
+//   Power Infusion = 마력 주입 (10060, self id 37274)
+//   Ebon Might = 칠흑의 힘 (395152, 404269)
+//   Prescience = 예지 (410089)
+// 매칭: ID 1차, nameKeywords 2차(구 리포트 호환).
 const EXTERNAL_BUFFS: Array<{ ids: number[]; nameKeywords: RegExp; label: string; short: string; color: string }> = [
   { ids: [37274, 10060], nameKeywords: /power infusion|마력 주입/i, label: "마력 주입", short: "마주", color: "#ec4899" },
-  { ids: [1241715, 404269, 395152], nameKeywords: /might of the void|공허의 힘|ebon might|흑요석 위세|칠흑의 힘/i, label: "칠흑의 힘", short: "칠흑", color: "#f59e0b" },
-  { ids: [1229746, 410089], nameKeywords: /arcanoweave insight|prescience|예지|비전직조 통찰|비전 직조 통찰/i, label: "예지", short: "예지", color: "#22d3ee" },
+  { ids: [404269, 395152], nameKeywords: /ebon might|흑요석 위세|칠흑의 힘/i, label: "칠흑의 힘", short: "칠흑", color: "#f59e0b" },
+  { ids: [410089], nameKeywords: /prescience|예지/i, label: "예지", short: "예지", color: "#22d3ee" },
 ];
 
 // 소모품 분류 — CombatantInfo.auras 이름 패턴
