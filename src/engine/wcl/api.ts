@@ -199,6 +199,13 @@ export function getPercentileColor(pct: number): string {
  */
 const reportInfoCache = new Map<string, Promise<WCLReportInfo>>();
 
+/** 로그아웃·계정 전환 시 세션 캐시 전체 클리어. auth.ts logoutHook에서 호출. */
+export function clearAllCaches(): void {
+  reportInfoCache.clear();
+  partitionCache.clear();
+  combatantInfoCache.clear();
+}
+
 export async function getReportInfo(reportCode: string): Promise<WCLReportInfo> {
   const cached = reportInfoCache.get(reportCode);
   if (cached) return cached;

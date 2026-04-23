@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useSyncExternalStore, Fragment } from "react";
-import { isAuthenticated, startAuth, handleCallback, logout } from "./engine/wcl/auth";
+import { isAuthenticated, startAuth, handleCallback, logout, registerLogoutHook } from "./engine/wcl/auth";
+import { clearAllCaches } from "./engine/wcl/api";
 import { subscribeRateLimit, getRateLimitSnapshot } from "./engine/wcl/rateLimit";
 import {
   getMyCharacters, searchCharacter, getReportInfo, getEncounterRankings, getFightPlayerIds, getMyEncounterRankings,
@@ -74,13 +75,24 @@ function App() {
   // (encounterID, className, difficulty, perSpec) 조합별 랭킹 inflight/결과 캐시.
   // selectFight/selectBossRanking/selectMyKill이 같은 조합을 중복 호출하는 걸 방지.
   const rankingsCache = useRef(new Map<string, Promise<WCLRanking[]>>());
+
+  // 로그아웃 시 세션 캐시 전체 클리어 — 계정 전환 시 이전 유저 데이터 노출 방지.
   useEffect(() => {
-    const code = new URLSearchParams(window.location.search).get("code");
+    registerLogoutHook(() => {
+      clearAllCaches();
+      rankingsCache.current.clear();
+    });
+  }, []);
+
+  useEffect(() => {
+    const qs = new URLSearchParams(window.location.search);
+    const code = qs.get("code");
+    const returnedState = qs.get("state");
     if (code && !callbackHandled.current) {
       callbackHandled.current = true;
-      // StrictMode 이중 실행 방지: URL에서 code 즉시 제거
+      // StrictMode 이중 실행 방지: URL에서 code·state 즉시 제거
       window.history.replaceState({}, "", window.location.pathname);
-      handleCallback(code)
+      handleCallback(code, returnedState)
         .then(() => { setAuthed(true); setStep("characters"); })
         .catch((e) => setError("인증 실패: " + errorMessage(e)));
     }
