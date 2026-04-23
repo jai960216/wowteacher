@@ -1520,37 +1520,54 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       const width = el.clientWidth || 1;
       applyDelta((dx / width) * rangeLen);
     };
-    // 마우스 드래그 (데스크탑) — mousedown에서 시작, document 레벨 mousemove/mouseup로 추적
-    // (드래그가 컨테이너 밖으로 나가도 끝까지 추적·확실히 종료)
-    let dragging = false;
-    let dragPrevX = 0;
+    // 마우스 드래그 (데스크탑). threshold 넘으면 click 억제해 내부 a/img click 방지.
+    const DRAG_THRESHOLD = 4;
+    let mouseDownStartX = 0;
+    let mouseDownPrevX = 0;
+    let mouseDownActive = false;
+    let dragExceeded = false;
     const mouseMove = (e: MouseEvent) => {
-      if (!dragging) return;
+      if (!mouseDownActive) return;
       const curX = e.clientX;
-      const dx = dragPrevX - curX;
-      dragPrevX = curX;
+      if (!dragExceeded) {
+        if (Math.abs(curX - mouseDownStartX) < DRAG_THRESHOLD) return;
+        dragExceeded = true;
+        el.style.cursor = "grabbing";
+      }
+      const dx = mouseDownPrevX - curX;
+      mouseDownPrevX = curX;
       if (Math.abs(dx) < 1) return;
       const width = el.clientWidth || 1;
       applyDelta((dx / width) * rangeLen);
     };
     const mouseUp = () => {
-      if (!dragging) return;
-      dragging = false;
+      if (!mouseDownActive) return;
+      mouseDownActive = false;
       el.style.cursor = "grab";
       document.removeEventListener("mousemove", mouseMove);
       document.removeEventListener("mouseup", mouseUp);
+      if (dragExceeded) {
+        // 드래그였다면 뒤따르는 click 1회 억제 (스킬 아이콘 link 새 탭 방지)
+        const suppress = (ce: MouseEvent) => {
+          ce.stopPropagation();
+          ce.preventDefault();
+          el.removeEventListener("click", suppress, true);
+        };
+        el.addEventListener("click", suppress, true);
+      }
+      dragExceeded = false;
     };
     const mouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return;
       const target = e.target as HTMLElement;
-      // 버튼·링크·select 위에선 드래그 시작 안 함 (click 충돌 방지)
-      if (target.closest("a, button, select, input, img")) return;
-      dragging = true;
-      dragPrevX = e.clientX;
-      el.style.cursor = "grabbing";
+      // 입력 컨트롤 위에선 드래그 시작 안 함. a/img는 threshold로 click 분리.
+      if (target.closest("button, select, input, textarea")) return;
+      mouseDownActive = true;
+      dragExceeded = false;
+      mouseDownStartX = e.clientX;
+      mouseDownPrevX = e.clientX;
       document.addEventListener("mousemove", mouseMove);
       document.addEventListener("mouseup", mouseUp);
-      e.preventDefault();
     };
     el.addEventListener("wheel", wheelHandler, { passive: false });
     el.addEventListener("touchstart", touchStart, { passive: true });
