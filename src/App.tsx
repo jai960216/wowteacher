@@ -998,14 +998,38 @@ const EXTERNAL_BUFFS: Array<{ ids: number[]; nameKeywords: RegExp; label: string
 // 정책: oil/rune 류는 신패치 신규 이름을 못 따라가므로 키워드 매칭으로 광범위 노출하되,
 // false-positive 방지(예: DK Runeforging "...의 룬", 드워프 Stoneform)를 위해
 // 단어 컨텍스트(augment/증강 prefix, oil 단독)는 화이트리스트화.
-const CONSUMABLE_CATEGORIES: Array<{ label: string; test: (name: string) => boolean }> = [
-  { label: "음식",       test: (n) => /well fed|식사|진수성찬|잘 먹음|잘먹음/i.test(n) },
-  { label: "플라스크",   test: (n) => /\bphial\b|\bflask\b|\belixir\b|영약|엘릭서/i.test(n) },
-  { label: "기름/돌",    test: (n) => /\boil\b|whetstone|sharpening stone|weightstone|기름|숫돌|부싯돌/i.test(n) },
-  { label: "증강 룬",    test: (n) => /augment\s*rune|draconic augment|증강\s*룬|증강의\s*룬/i.test(n) },
+// 분류 전략: spell ID 화이트리스트 우선 (신패치 실데이터 기반 확정) + 이름 정규식 fallback.
+// 이름은 확장팩마다 바뀌지만 spell ID는 안정적이라 ID 매칭이 1차.
+// 실 응답 덤프(2026-04 Midnight 12.0.5 "Chimaerus the Undreamt God" 보스):
+//   음식: Hearty Well Fed(#1285644/#1233724/#1233703), Well Fed(#1294727), Feast of Souls(#1232310)
+//   플라스크: Flask of the Shattered Sun(#1235111), Flask of the Magisters(#1235108), Flask of the Blood Knights(#1235110)
+//   무기 강화: Singular Focus(#1269406), Umbral Plume(#1265808), Radiant Plume(#1260615), Void-Touched(#1264426)
+//   증강 룬: Draconic Augmentation(#393438), Ethereal Augmentation(#1234969), Vantus Rune 계열(#1276685/#1277389/#1276709/#1276682)
+const CONSUMABLE_CATEGORIES: Array<{ label: string; ids: number[]; test: (name: string) => boolean }> = [
+  {
+    label: "음식",
+    ids: [1285644, 1233724, 1233703, 1294727, 1232310],
+    test: (n) => /well fed|feast of souls|식사|진수성찬|잘 먹음|잘먹음/i.test(n),
+  },
+  {
+    label: "플라스크",
+    ids: [1235111, 1235108, 1235110],
+    test: (n) => /\bphial\b|\bflask\b|\belixir\b|영약|엘릭서/i.test(n),
+  },
+  {
+    label: "무기 강화",
+    ids: [1269406, 1265808, 1260615, 1264426],
+    test: (n) => /\boil\b|whetstone|sharpening stone|weightstone|\bplume\b|singular focus|기름|숫돌|부싯돌/i.test(n),
+  },
+  {
+    label: "증강 룬",
+    ids: [393438, 1234969, 1276685, 1277389, 1276709, 1276682],
+    test: (n) => /augment(ation|\s*rune)?|vantus\s*rune|draconic augment|증강\s*룬|증강의\s*룬/i.test(n),
+  },
 ];
 
-function classifyConsumable(name: string): string | null {
+function classifyConsumable(name: string, spellId: number): string | null {
+  for (const c of CONSUMABLE_CATEGORIES) if (c.ids.includes(spellId)) return c.label;
   for (const c of CONSUMABLE_CATEGORIES) if (c.test(name)) return c.label;
   return null;
 }
@@ -1197,7 +1221,7 @@ function ConsumablesSection({ myAuras, refAuras }: { myAuras: GearAura[]; refAur
 
   if (myAuras.length === 0 && refAuras.length === 0) return null;
 
-  const classify = (auras: GearAura[]) => auras.map(a => ({ ...a, cat: classifyConsumable(a.name) }));
+  const classify = (auras: GearAura[]) => auras.map(a => ({ ...a, cat: classifyConsumable(a.name, a.ability) }));
   const myC = classify(myAuras);
   const refC = classify(refAuras);
 
