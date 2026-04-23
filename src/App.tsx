@@ -3,7 +3,7 @@ import { isAuthenticated, startAuth, handleCallback, logout } from "./engine/wcl
 import { subscribeRateLimit, getRateLimitSnapshot } from "./engine/wcl/rateLimit";
 import {
   getMyCharacters, searchCharacter, getReportInfo, getEncounterRankings, getFightPlayerIds, getMyEncounterRankings,
-  getFightTime, getBuffsTable,
+  getFightTime, getBuffsTable, EXTERNAL_KEYWORD_RE,
   CLASS_NAMES_KR, CLASS_COLORS, DIFFICULTY_NAMES, DIFFICULTY_COLORS,
   getClassIconUrl, getPercentileColor,
   type WCLReportInfo, type WCLRanking, type WCLFight, type ZoneRankingData,
@@ -580,6 +580,9 @@ interface BuffCacheEntry {
   buffs?: Array<{ cfg: typeof EXTERNAL_BUFFS[number]; count: number; uptimePercent: number }>;
   // WCL 방식: 매칭 안 된 모든 buff도 raw로 저장. 사용자가 실제 이름 확인 가능.
   allBuffs?: Array<{ spellId: number; name: string; icon: string; totalUses: number; uptimePercent: number }>;
+  // PI/EM/Prescience 계열 키워드 hit했으나 EXTERNAL_BUFFS ID에 없는 항목 — 신규 ID 후보 자동 노출.
+  // 마주가 3번 걸려서 uptime 10% 근처면 Top20 밖이라 로그로 안 보일 수 있음 → UI에 노출.
+  candidates?: Array<{ spellId: number; name: string; icon: string; totalUses: number; uptimePercent: number }>;
 }
 
 function RankingsView({ rankings, selectedFight, cName, classID, className, metric, onMetricChange, onAnalysis }: {
@@ -633,11 +636,18 @@ function RankingsView({ rankings, selectedFight, cName, classID, className, metr
         ?? report.players.find(p => norm(p.name) === rName);
       if (!player) throw new Error(`${r.name} 플레이어를 리포트에서 찾을 수 없음`);
       const table = await getBuffsTable(r.reportCode, player.id, fight.startTime, fight.endTime);
+      const matchedIds = new Set<number>();
       const ext = EXTERNAL_BUFFS.map(cfg => {
         const hit = table.find(b => cfg.ids.includes(b.spellId) || cfg.nameKeywords.test(b.name));
+        if (hit) matchedIds.add(hit.spellId);
         return { cfg, count: hit?.totalUses ?? 0, uptimePercent: hit?.uptimePercent ?? 0 };
       });
-      setBufCache(prev => new Map(prev).set(key, { loading: false, buffs: ext, allBuffs: table }));
+      // 후보: PI/EM/Presc 키워드 hit 했으나 이미 매칭된 항목은 제외.
+      // 매칭 실패로 UI "미수령"이 떠도 이름상 후보인 건 별도 노출해야 진단 가능.
+      const candidates = table.filter(b =>
+        EXTERNAL_KEYWORD_RE.test(b.name) && !matchedIds.has(b.spellId)
+      );
+      setBufCache(prev => new Map(prev).set(key, { loading: false, buffs: ext, allBuffs: table, candidates }));
     } catch (e) {
       setBufCache(prev => new Map(prev).set(key, { loading: false, error: e instanceof Error ? e.message : String(e) }));
     }
@@ -778,6 +788,18 @@ function RankingsView({ rankings, selectedFight, cName, classID, className, metr
                     )}
                   </div>
                 </div>
+                {/* 매칭 실패 후보 자동 노출 — PI/EM/Presc 키워드 hit했으나 EXTERNAL_BUFFS ID 누락 */}
+                {cacheEntry?.candidates && cacheEntry.candidates.length > 0 && (
+                  <div className="px-4 py-1.5 flex items-center gap-2 text-[10px] flex-wrap"
+                    style={{ background: "#2a1e0520", borderBottom: "1px solid #1c1c30" }}>
+                    <span className="text-amber-400 font-semibold">⚠ 외부 버프 후보 (ID 미등록):</span>
+                    {cacheEntry.candidates.map(c => (
+                      <span key={`${c.spellId}-${c.name}`} className="text-amber-200 font-mono" title={`spell ID #${c.spellId}`}>
+                        {c.name} <span className="text-amber-400/60">(#{c.spellId} · {c.totalUses}회 · {c.uptimePercent}%)</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {/* "전체 외부 버프" 확장 행 — 매칭 누락된 버프 확인용 */}
                 {showAll && cacheEntry?.allBuffs && (
                   <div className="px-4 py-3" style={{ background: "linear-gradient(90deg, #0d0a1a, #0f0a20)", borderBottom: "1px solid #1c1c30", borderTop: "1px solid #2a1e4a" }}>

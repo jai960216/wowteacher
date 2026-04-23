@@ -14,6 +14,12 @@ import { detectHeroTalent } from "../specs/heroTalents";
 const PUBLIC_API = "https://www.warcraftlogs.com/api/v2/client";
 const USER_API = "https://www.warcraftlogs.com/api/v2/user";
 
+/**
+ * PI/Ebon Might/Prescience 계열 외부 버프 키워드.
+ * getBuffsTable 로그 진단과 App.tsx의 "후보" UI 노출에서 공유 — 키워드 추가 시 단일 소스.
+ */
+export const EXTERNAL_KEYWORD_RE = /infusion|might|prescience|마력|주입|위세|예지|흑요|칠흑/i;
+
 const RATE_LIMIT_FIELD = "rateLimitData { limitPerHour pointsSpentThisHour pointsResetIn }";
 
 /**
@@ -410,11 +416,14 @@ export async function getBuffsTable(
     };
   });
 
-  // 응답 덤프 — 외부 버프 spell ID/이름 진단용. 사용자가 미탐지 케이스 보고 시 이 로그로 실제 ID 확인.
-  const top = [...mapped].sort((a, b) => b.uptimePercent - a.uptimePercent).slice(0, 20);
+  // 외부 버프 후보 — PI/EM/Prescience 계열 키워드 매칭 항목은 uptime 컷과 무관하게 전부 출력.
+  // 마주가 3번만 걸렸으면 uptime 10% 근처로 Top20 밖이라 이전 로그에선 보이지 않았음.
+  const externalCandidates = mapped.filter(b => EXTERNAL_KEYWORD_RE.test(b.name));
   console.log(
-    `[getBuffsTable] target=${targetId} | ${mapped.length}종 | Top20:`,
-    top.map(b => `${b.name}(#${b.spellId}) ${b.uptimePercent}%`).join(" | "),
+    `[getBuffsTable] target=${targetId} | ${mapped.length}종 | 외부버프후보:`,
+    externalCandidates.length > 0
+      ? externalCandidates.map(b => `${b.name}(#${b.spellId}) ${b.totalUses}회 ${b.uptimePercent}%`).join(" | ")
+      : "없음",
   );
 
   return mapped;
