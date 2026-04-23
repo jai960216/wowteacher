@@ -997,35 +997,57 @@ function GearTab({ analysis, rankings, refSpec, statScan, setStatScan, statScanL
         {statScan && <StatScanResult scan={statScan} />}
       </div>
 
-      {/* 특성 — 영웅특성(감지되면) + WCL 빌드 페이지 외부 링크 */}
+      {/* 특성·리플레이 — 영웅특성(감지되면) + WCL 외부 링크 */}
       <div className="wcl-card p-4">
-        <h3 className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">특성</h3>
+        <h3 className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">특성·리플레이</h3>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <div className="text-[10px] text-gray-600 mb-1">나</div>
             {g.myHeroTree && <div className="text-sm text-white font-semibold mb-1.5">{heroTalentNameKr(g.myHeroTree)}</div>}
-            <a
-              href={`https://ko.warcraftlogs.com/reports/${analysis.myReportCode}?fight=${analysis.myFightID}&type=summary&source=${analysis.myPlayerId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block text-[11px] underline"
-              style={{ color: "#a78bfa" }}
-            >
-              특성 빌드 보기 ↗
-            </a>
+            <div className="flex flex-col gap-1">
+              <a
+                href={`https://ko.warcraftlogs.com/reports/${analysis.myReportCode}?fight=${analysis.myFightID}&type=summary&source=${analysis.myPlayerId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block text-[11px] underline w-fit"
+                style={{ color: "#a78bfa" }}
+              >
+                특성 빌드 보기 ↗
+              </a>
+              <a
+                href={`https://ko.warcraftlogs.com/reports/${analysis.myReportCode}?fight=${analysis.myFightID}&type=replay&source=${analysis.myPlayerId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block text-[11px] underline w-fit"
+                style={{ color: "#a78bfa" }}
+              >
+                리플레이 보기 ↗
+              </a>
+            </div>
           </div>
           <div>
             <div className="text-[10px] text-gray-600 mb-1">상대</div>
             {g.refHeroTree && <div className="text-sm text-white font-semibold mb-1.5">{heroTalentNameKr(g.refHeroTree)}</div>}
-            <a
-              href={`https://ko.warcraftlogs.com/reports/${analysis.refReportCode}?fight=${analysis.refFightID}&type=summary&source=${analysis.refPlayerId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block text-[11px] underline"
-              style={{ color: "#fbbf24" }}
-            >
-              특성 빌드 보기 ↗
-            </a>
+            <div className="flex flex-col gap-1">
+              <a
+                href={`https://ko.warcraftlogs.com/reports/${analysis.refReportCode}?fight=${analysis.refFightID}&type=summary&source=${analysis.refPlayerId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block text-[11px] underline w-fit"
+                style={{ color: "#fbbf24" }}
+              >
+                특성 빌드 보기 ↗
+              </a>
+              <a
+                href={`https://ko.warcraftlogs.com/reports/${analysis.refReportCode}?fight=${analysis.refFightID}&type=replay&source=${analysis.refPlayerId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block text-[11px] underline w-fit"
+                style={{ color: "#fbbf24" }}
+              >
+                리플레이 보기 ↗
+              </a>
+            </div>
           </div>
         </div>
       </div>
