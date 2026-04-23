@@ -1115,10 +1115,11 @@ function ConsumablesSection({ myAuras, refAuras, myGear, refGear }: {
   const myC = classify(myAuras);
   const refC = classify(refAuras);
 
-  // enchant DB index → 이름 매핑. Wowhead 미등록 Midnight 신규 enchant는 여기 하드코딩.
-  const WEAPON_ENCHANT_NAMES: Record<number, string> = {
-    8051: "Thalassian Phoenix Oil",
-    8052: "Thalassian Phoenix Oil",
+  // enchant DB index → 메타 매핑. Wowhead 미등록 Midnight 신규 enchant는 여기 하드코딩.
+  // rank: WoW 제작 품질 (1=일반, 2=중급, 3=상위 "금빛").
+  const WEAPON_ENCHANT_DB: Record<number, { name: string; icon: string; itemId: number; rank: 1 | 2 | 3 }> = {
+    8051: { name: "Thalassian Phoenix Oil", icon: "inv_12_profession_enchanting_manaoil_red", itemId: 243734, rank: 2 },
+    8052: { name: "Thalassian Phoenix Oil", icon: "inv_12_profession_enchanting_manaoil_red", itemId: 243734, rank: 3 },
   };
 
   // 무기 강화(오일/돌)는 gear의 temporaryEnchant로 판정. 주무기(15)/보조무기(16) dedup.
@@ -1155,18 +1156,45 @@ function ConsumablesSection({ myAuras, refAuras, myGear, refGear }: {
       <div className="flex items-center gap-2 text-[11px]">
         <span className="text-gray-500 w-14">무기 강화</span>
         {enchants.length > 0 ? (
-          <span className="text-gray-200 truncate">
-            {enchants.map((id, i) => {
-              const name = WEAPON_ENCHANT_NAMES[id];
+          <div className="flex items-center gap-2 flex-wrap">
+            {enchants.map((id) => {
+              const meta = WEAPON_ENCHANT_DB[id];
+              if (!meta) {
+                return (
+                  <span key={id} className="text-gray-400">
+                    미확인 <span className="text-gray-600 text-[9px]">(#{id})</span>
+                  </span>
+                );
+              }
+              // rank 뱃지 — 3=금빛, 2=은색, 1=동색
+              const rankColor = meta.rank === 3 ? "#f5c542" : meta.rank === 2 ? "#c0c0c0" : "#cd7f32";
               return (
-                <span key={id}>
-                  {i > 0 && ", "}
-                  {name ?? <span className="text-gray-400">미확인</span>}
-                  <span className="text-gray-600 text-[9px] ml-1">(#{id})</span>
-                </span>
+                <a key={id}
+                  href={`https://www.wowhead.com/item=${meta.itemId}`}
+                  data-wowhead={`item=${meta.itemId}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 no-underline hover:brightness-110">
+                  <img
+                    src={`${ICON_BASE}/${meta.icon}.jpg`}
+                    alt=""
+                    className="w-4 h-4 rounded-sm flex-shrink-0"
+                    onError={ev => (ev.currentTarget.style.display = "none")}
+                  />
+                  <span className="text-gray-200">{meta.name}</span>
+                  <span
+                    className="inline-flex items-center justify-center text-[8px] font-black leading-none rounded-full"
+                    style={{
+                      width: 13, height: 13,
+                      color: "#1a1a1a",
+                      background: rankColor,
+                      boxShadow: `0 0 4px ${rankColor}88`,
+                    }}
+                    title={`제작 등급 ${meta.rank}`}
+                  >★</span>
+                </a>
               );
             })}
-          </span>
+          </div>
         ) : <span className="text-gray-700 text-[10px]">미사용</span>}
       </div>
     </div>
