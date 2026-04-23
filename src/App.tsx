@@ -1652,18 +1652,29 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
           <span className="font-mono text-[11px] font-semibold px-2 py-1 rounded" style={{ color: "#a78bfa", background: "#1c1c30", border: "1px solid #2a2a40" }}>
             {Math.round(scrollRange.start)}s ~ {Math.round(scrollRange.end)}s
           </span>
-          <select value={rangeLen} onChange={e => {
-            const len = Number(e.target.value);
-            setScrollRange(prev => ({ start: prev.start, end: Math.min(prev.start + len, duration) }));
-          }} className="text-[11px] font-semibold rounded px-2 py-1 cursor-pointer"
-            style={{ background: "#1c1c30", color: "#d1d5db", border: "1px solid #2a2a40" }}>
-            <option value={5}>5초</option>
-            <option value={10}>10초</option>
-            <option value={30}>30초</option>
-            <option value={60}>60초</option>
-            <option value={120}>2분</option>
-            <option value={Math.ceil(duration)}>전체</option>
-          </select>
+          {/* 시간 범위 버튼 그룹 — select 요소의 wheel focus 충돌 문제 제거 */}
+          <div className="flex gap-0.5 p-0.5 rounded" style={{ background: "#131320", border: "1px solid #1c1c30" }}>
+            {[
+              { val: 5, label: "5초" },
+              { val: 10, label: "10초" },
+              { val: 30, label: "30초" },
+              { val: 60, label: "60초" },
+              { val: 120, label: "2분" },
+              { val: Math.ceil(duration), label: "전체" },
+            ].map(opt => {
+              const active = rangeLen === opt.val;
+              return (
+                <button key={opt.label}
+                  onClick={() => setScrollRange(prev => ({ start: prev.start, end: Math.min(prev.start + opt.val, duration) }))}
+                  className="text-[11px] px-2 py-1 rounded font-semibold transition hover:brightness-125"
+                  style={active
+                    ? { background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }
+                    : { background: "transparent", color: "#9ca3af" }}>
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
           <span className="text-[10px] text-gray-500 hidden sm:inline">드래그 · 휠 · 터치 스크롤</span>
         </div>
       </div>
