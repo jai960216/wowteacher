@@ -997,26 +997,38 @@ function GearTab({ analysis, rankings, refSpec, statScan, setStatScan, statScanL
         {statScan && <StatScanResult scan={statScan} />}
       </div>
 
-      {/* 영웅특성 */}
-      {(g.myHeroTree || g.refHeroTree) && (
-        <div className="wcl-card p-4">
-          <h3 className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">영웅특성</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="text-[10px] text-gray-600 mb-1">나</div>
-              {g.myHeroTree
-                ? <span className="text-sm text-white font-semibold">{heroTalentNameKr(g.myHeroTree)}</span>
-                : <span className="text-gray-600 text-xs">정보 없음</span>}
-            </div>
-            <div>
-              <div className="text-[10px] text-gray-600 mb-1">상대</div>
-              {g.refHeroTree
-                ? <span className="text-sm text-white font-semibold">{heroTalentNameKr(g.refHeroTree)}</span>
-                : <span className="text-gray-600 text-xs">정보 없음</span>}
-            </div>
+      {/* 특성 — 영웅특성(감지되면) + WCL 빌드 페이지 외부 링크 */}
+      <div className="wcl-card p-4">
+        <h3 className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">특성</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <div className="text-[10px] text-gray-600 mb-1">나</div>
+            {g.myHeroTree && <div className="text-sm text-white font-semibold mb-1.5">{heroTalentNameKr(g.myHeroTree)}</div>}
+            <a
+              href={`https://ko.warcraftlogs.com/reports/${analysis.myReportCode}?fight=${analysis.myFightID}&type=summary&source=${analysis.myPlayerId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block text-[11px] underline"
+              style={{ color: "#a78bfa" }}
+            >
+              특성 빌드 보기 ↗
+            </a>
+          </div>
+          <div>
+            <div className="text-[10px] text-gray-600 mb-1">상대</div>
+            {g.refHeroTree && <div className="text-sm text-white font-semibold mb-1.5">{heroTalentNameKr(g.refHeroTree)}</div>}
+            <a
+              href={`https://ko.warcraftlogs.com/reports/${analysis.refReportCode}?fight=${analysis.refFightID}&type=summary&source=${analysis.refPlayerId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block text-[11px] underline"
+              style={{ color: "#fbbf24" }}
+            >
+              특성 빌드 보기 ↗
+            </a>
           </div>
         </div>
-      )}
+      </div>
 
       {/* 스탯 비교 */}
       {mainStats.length > 0 && (
