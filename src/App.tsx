@@ -1488,22 +1488,30 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
   const duration = Math.max(analysis.fightDuration.my, analysis.fightDuration.ref);
   const rangeLen = scrollRange.end - scrollRange.start;
 
+  // 진단: scrollRange 변화마다 로그 + stack trace로 호출 경로 추적
+  useEffect(() => {
+    console.log(`[TL state] range=${scrollRange.start.toFixed(1)}~${scrollRange.end.toFixed(1)} rangeLen=${rangeLen.toFixed(1)} duration=${duration.toFixed(1)}`);
+  }, [scrollRange, rangeLen, duration]);
+
   // 마우스 휠 + 터치 스와이프 + 마우스 드래그로 시간 스크롤.
   // pointer events는 touch/click과 충돌 이슈 있어서 데스크탑=mouse, 모바일=touch로 이원화.
   useEffect(() => {
     const el = chartRef.current;
     if (!el) return;
-    const applyDelta = (deltaSec: number) => {
+    const applyDelta = (deltaSec: number, src: string) => {
+      console.log(`[TL applyDelta] src=${src} delta=${deltaSec.toFixed(2)} rangeLen=${rangeLen.toFixed(1)} duration=${duration.toFixed(1)}`);
       setScrollRange(prev => {
         const maxStart = Math.max(0, duration - rangeLen);
         const newStart = Math.max(0, Math.min(maxStart, prev.start + deltaSec));
-        return { start: newStart, end: newStart + rangeLen };
+        const next = { start: newStart, end: newStart + rangeLen };
+        console.log(`[TL setRange] ${src}: prev=${prev.start.toFixed(1)}~${prev.end.toFixed(1)} → next=${next.start.toFixed(1)}~${next.end.toFixed(1)}`);
+        return next;
       });
     };
     const wheelHandler = (e: WheelEvent) => {
       e.preventDefault();
       const step = rangeLen * 0.15;
-      applyDelta(e.deltaY > 0 ? step : -step);
+      applyDelta(e.deltaY > 0 ? step : -step, "wheel");
     };
     // 터치 스와이프 (모바일)
     let touchPrevX = 0;
@@ -1518,7 +1526,7 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       if (Math.abs(dx) < 1) return;
       e.preventDefault();
       const width = el.clientWidth || 1;
-      applyDelta((dx / width) * rangeLen);
+      applyDelta((dx / width) * rangeLen, "touch");
     };
     // 마우스 드래그 (데스크탑). threshold 넘으면 click 억제해 내부 a/img click 방지.
     const DRAG_THRESHOLD = 4;
@@ -1538,7 +1546,7 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       mouseDownPrevX = curX;
       if (Math.abs(dx) < 1) return;
       const width = el.clientWidth || 1;
-      applyDelta((dx / width) * rangeLen);
+      applyDelta((dx / width) * rangeLen, "move");
     };
     const mouseUp = () => {
       if (!mouseDownActive) return;
@@ -1560,8 +1568,12 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
     const mouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return;
       const target = e.target as HTMLElement;
+      console.log(`[TL mouseDown] target=${target.tagName}.${target.className?.toString().slice(0, 40)}`);
       // 입력 컨트롤 위에선 드래그 시작 안 함. a/img는 threshold로 click 분리.
-      if (target.closest("button, select, input, textarea")) return;
+      if (target.closest("button, select, input, textarea")) {
+        console.log("[TL mouseDown] skipped — inside interactive control");
+        return;
+      }
       mouseDownActive = true;
       dragExceeded = false;
       mouseDownStartX = e.clientX;
@@ -1665,7 +1677,7 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
               const active = rangeLen === opt.val;
               return (
                 <button key={opt.label}
-                  onClick={() => setScrollRange(prev => ({ start: prev.start, end: Math.min(prev.start + opt.val, duration) }))}
+                  onClick={() => { console.log(`[TL btn] ${opt.label} clicked (val=${opt.val})`); setScrollRange(prev => ({ start: prev.start, end: Math.min(prev.start + opt.val, duration) })); }}
                   className="text-[11px] px-2 py-1 rounded font-semibold transition hover:brightness-125"
                   style={active
                     ? { background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }
