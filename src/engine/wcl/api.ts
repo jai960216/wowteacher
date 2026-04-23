@@ -399,7 +399,7 @@ export async function getBuffsTable(
   const entries: any[] = parsed?.data?.auras ?? parsed?.auras ?? parsed?.data?.entries ?? parsed?.entries ?? [];
   const duration = endTime - startTime;
 
-  return entries.map((e: any) => {
+  const mapped = entries.map((e: any) => {
     const totalUptime = e.totalUptime ?? e.uptime ?? 0;
     return {
       spellId: e.guid ?? e.id ?? 0,
@@ -409,6 +409,15 @@ export async function getBuffsTable(
       uptimePercent: duration > 0 ? Math.round((totalUptime / duration) * 1000) / 10 : 0,
     };
   });
+
+  // 응답 덤프 — 외부 버프 spell ID/이름 진단용. 사용자가 미탐지 케이스 보고 시 이 로그로 실제 ID 확인.
+  const top = [...mapped].sort((a, b) => b.uptimePercent - a.uptimePercent).slice(0, 20);
+  console.log(
+    `[getBuffsTable] target=${targetId} | ${mapped.length}종 | Top20:`,
+    top.map(b => `${b.name}(#${b.spellId}) ${b.uptimePercent}%`).join(" | "),
+  );
+
+  return mapped;
 }
 
 export async function getBuffs(
