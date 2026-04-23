@@ -1488,50 +1488,43 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
   const duration = Math.max(analysis.fightDuration.my, analysis.fightDuration.ref);
   const rangeLen = scrollRange.end - scrollRange.start;
 
-  // 마우스 휠 + 터치 스와이프 + 마우스 드래그(클릭 유지)로 시간 스크롤
+  // 마우스 휠 + 터치 스와이프 + 마우스 드래그로 시간 스크롤.
+  // pointer events는 touch/click과 충돌 이슈 있어서 데스크탑=mouse, 모바일=touch로 이원화.
   useEffect(() => {
     const el = chartRef.current;
     if (!el) return;
     const applyDelta = (deltaSec: number) => {
       setScrollRange(prev => {
-        const newStart = Math.max(0, Math.min(duration - rangeLen, prev.start + deltaSec));
+        const maxStart = Math.max(0, duration - rangeLen);
+        const newStart = Math.max(0, Math.min(maxStart, prev.start + deltaSec));
         return { start: newStart, end: newStart + rangeLen };
       });
     };
     const wheelHandler = (e: WheelEvent) => {
       e.preventDefault();
-      const step = rangeLen * 0.15; // 범위의 15%씩 이동
+      const step = rangeLen * 0.15;
       applyDelta(e.deltaY > 0 ? step : -step);
     };
-    let prevX = 0;
+    // 터치 스와이프 (모바일)
+    let touchPrevX = 0;
     const touchStart = (e: TouchEvent) => {
-      if (e.touches.length === 1) prevX = e.touches[0].clientX;
+      if (e.touches.length === 1) touchPrevX = e.touches[0].clientX;
     };
     const touchMove = (e: TouchEvent) => {
       if (e.touches.length !== 1) return;
       const curX = e.touches[0].clientX;
-      const dx = prevX - curX;
-      prevX = curX;
+      const dx = touchPrevX - curX;
+      touchPrevX = curX;
       if (Math.abs(dx) < 1) return;
       e.preventDefault();
       const width = el.clientWidth || 1;
       applyDelta((dx / width) * rangeLen);
     };
-    // 마우스 드래그(잡고 옮기기) — pointer 이벤트로 좌클릭 유지 중 좌우 이동 시 scrollRange 변경
+    // 마우스 드래그 (데스크탑) — mousedown에서 시작, document 레벨 mousemove/mouseup로 추적
+    // (드래그가 컨테이너 밖으로 나가도 끝까지 추적·확실히 종료)
     let dragging = false;
     let dragPrevX = 0;
-    const pointerDown = (e: PointerEvent) => {
-      // 버튼·링크 같은 interactive 자식 위에선 드래그 시작 안 함 (click 충돌 방지)
-      const target = e.target as HTMLElement;
-      if (target.closest("a, button, select, input")) return;
-      if (e.button !== 0 && e.pointerType === "mouse") return;
-      if (e.pointerType === "touch") return; // touchmove가 처리
-      dragging = true;
-      dragPrevX = e.clientX;
-      el.setPointerCapture(e.pointerId);
-      el.style.cursor = "grabbing";
-    };
-    const pointerMove = (e: PointerEvent) => {
+    const mouseMove = (e: MouseEvent) => {
       if (!dragging) return;
       const curX = e.clientX;
       const dx = dragPrevX - curX;
@@ -1540,28 +1533,37 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       const width = el.clientWidth || 1;
       applyDelta((dx / width) * rangeLen);
     };
-    const pointerEnd = (e: PointerEvent) => {
+    const mouseUp = () => {
       if (!dragging) return;
       dragging = false;
-      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
       el.style.cursor = "grab";
+      document.removeEventListener("mousemove", mouseMove);
+      document.removeEventListener("mouseup", mouseUp);
+    };
+    const mouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      const target = e.target as HTMLElement;
+      // 버튼·링크·select 위에선 드래그 시작 안 함 (click 충돌 방지)
+      if (target.closest("a, button, select, input, img")) return;
+      dragging = true;
+      dragPrevX = e.clientX;
+      el.style.cursor = "grabbing";
+      document.addEventListener("mousemove", mouseMove);
+      document.addEventListener("mouseup", mouseUp);
+      e.preventDefault();
     };
     el.addEventListener("wheel", wheelHandler, { passive: false });
     el.addEventListener("touchstart", touchStart, { passive: true });
     el.addEventListener("touchmove", touchMove, { passive: false });
-    el.addEventListener("pointerdown", pointerDown);
-    el.addEventListener("pointermove", pointerMove);
-    el.addEventListener("pointerup", pointerEnd);
-    el.addEventListener("pointercancel", pointerEnd);
+    el.addEventListener("mousedown", mouseDown);
     el.style.cursor = "grab";
     return () => {
       el.removeEventListener("wheel", wheelHandler);
       el.removeEventListener("touchstart", touchStart);
       el.removeEventListener("touchmove", touchMove);
-      el.removeEventListener("pointerdown", pointerDown);
-      el.removeEventListener("pointermove", pointerMove);
-      el.removeEventListener("pointerup", pointerEnd);
-      el.removeEventListener("pointercancel", pointerEnd);
+      el.removeEventListener("mousedown", mouseDown);
+      document.removeEventListener("mousemove", mouseMove);
+      document.removeEventListener("mouseup", mouseUp);
     };
   }, [rangeLen, duration]);
 
