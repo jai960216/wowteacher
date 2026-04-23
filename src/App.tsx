@@ -877,7 +877,7 @@ const QUALITY_COLORS: Record<number, string> = { 1: "#fff", 2: "#1eff00", 3: "#0
 const EXTERNAL_BUFFS: Array<{ ids: number[]; nameKeywords: RegExp; label: string; short: string; color: string }> = [
   { ids: [37274, 10060], nameKeywords: /power infusion|마력 주입/i, label: "마력 주입", short: "마주", color: "#ec4899" },
   { ids: [404269, 395152], nameKeywords: /ebon might|흑요석 위세|칠흑의 힘/i, label: "칠흑의 힘", short: "칠흑", color: "#f59e0b" },
-  { ids: [410089], nameKeywords: /prescience|예지/i, label: "예지", short: "예지", color: "#22d3ee" },
+  { ids: [1229746, 410089], nameKeywords: /arcanoweave insight|prescience|예지|비전직조 통찰/i, label: "예지", short: "예지", color: "#22d3ee" },
 ];
 
 // 소모품 분류 — CombatantInfo.auras 이름 패턴
