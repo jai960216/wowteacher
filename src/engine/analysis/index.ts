@@ -4,6 +4,7 @@
 
 import {
   getCasts, getBuffs, getResources, getDamageDone, getDamageTable, getHealingDone, getHealingTable, getCombatantInfo,
+  getIncomingCasts,
   type WCLReportInfo, type WCLFight,
 } from "../wcl/api";
 import { analyzeUptime, compareUptime } from "./uptime";
@@ -12,6 +13,7 @@ import { analyzePatterns } from "./patterns";
 import { filterPassiveCasts } from "./filters";
 import { buildAuraTimeline } from "./auras";
 import { detectHeroTalent } from "../specs/heroTalents";
+import { EXTERNAL_BUFFS, EXTERNAL_BUFF_SPELL_IDS, EXTERNAL_SPELL_TO_LABEL } from "../externalBuffs";
 import type {
   FullAnalysis, GearComparison, DamageAnalysis, HealingAnalysis, DamageBreakdownEntry,
   ResourceAnalysis, CooldownUsage, WCLDamageEvent, WCLHealEvent, WCLCombatantInfo, GearItem,
@@ -148,6 +150,36 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
   console.log(`[analysis] 오라: 나 ${myAuras.length}종 (raw ${myBuffs.length}이벤트), 상대 ${refAuras.length}종 (raw ${refBuffs.length}이벤트)`);
   console.log(`[analysis] 리포트 참조: my=${input.myReport.code}:${input.myFight.id}(player=${input.myPlayerId}) ref=${input.refReportCode}:${input.refFight.id}(player=${input.refPlayerId})`);
 
+  // 8.6) 외부 버프 수령 여부 계산 — Buffs events + 외부 Cast 이벤트 OR 조합.
+  // Buffs events가 누락하는 경우(WCL API 제약) 시전자의 cast 이벤트로 역추정.
+  const [myIncomingCasts, refIncomingCasts] = await Promise.all([
+    getIncomingCasts(input.myReport.code, input.myPlayerId, input.myFight.startTime, input.myFight.endTime, EXTERNAL_BUFF_SPELL_IDS),
+    getIncomingCasts(input.refReportCode, input.refPlayerId, input.refFight.startTime, input.refFight.endTime, EXTERNAL_BUFF_SPELL_IDS),
+  ]);
+  const detectedFrom = (auras: typeof myAuras, casts: Array<{ spellId: number; castCount: number }>): Record<string, boolean> => {
+    const received: Record<string, boolean> = {};
+    for (const cfg of EXTERNAL_BUFFS) received[cfg.label] = false;
+    // Buffs events 기반 매칭
+    for (const cfg of EXTERNAL_BUFFS) {
+      if (auras.some(a => cfg.ids.includes(a.spellId) || cfg.nameKeywords.test(a.name))) {
+        received[cfg.label] = true;
+      }
+    }
+    // Cast 이벤트 fallback
+    for (const c of casts) {
+      if (c.castCount > 0) {
+        const label = EXTERNAL_SPELL_TO_LABEL[c.spellId];
+        if (label) received[label] = true;
+      }
+    }
+    return received;
+  };
+  const externalBuffsReceived = {
+    my: detectedFrom(myAuras, myIncomingCasts),
+    ref: detectedFrom(refAuras, refIncomingCasts),
+  };
+  console.log("[analysis] 외부 버프:", JSON.stringify(externalBuffsReceived));
+
   // 9) 패턴 분석 (딜사이클, 자원별 습관, 시퀀스)
   const patterns = analyzePatterns(mySnapshots, refSnapshots);
 
@@ -201,6 +233,7 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
     refReportCode: input.refReportCode,
     refFightID: input.refFight.id,
     refPlayerId: input.refPlayerId,
+    externalBuffsReceived,
     isHealer: input.isHealer,
     gear,
     damage,

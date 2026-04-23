@@ -14,6 +14,7 @@ import { encounterNameKr } from "./engine/specs/encounterNames";
 import { getSpecIconUrl } from "./engine/specs/specIcons";
 import type { CastSnapshot, GearItem } from "./engine/analysis/types";
 import type { AuraInfo } from "./engine/analysis/auras";
+import { EXTERNAL_BUFFS } from "./engine/externalBuffs";
 import { scanTopStats, type TopStatsScanResult } from "./engine/analysis/statScan";
 import { SpellResolver } from "./engine/spell/resolver";
 import type { SpellMeta } from "./engine/spell/types";
@@ -868,15 +869,7 @@ function SuggestionsTab({ analysis, spellMeta }: { analysis: FullAnalysis; spell
 const SLOT_NAMES = ["머리", "목", "어깨", "셔츠", "가슴", "허리", "다리", "발", "손목", "장갑", "손가락1", "손가락2", "장신구1", "장신구2", "등", "주무기", "보조무기"];
 const QUALITY_COLORS: Record<number, string> = { 1: "#fff", 2: "#1eff00", 3: "#0070dd", 4: "#a335ee", 5: "#ff8000", 6: "#e6cc80" };
 
-// 외부 딜 증가 버프 — 상위권 비교 시 핵심 지표
-// Midnight 12.0.5 기준 ID (사용자 확인):
-//   Power Infusion = 마력 주입 (10060, self id 37274)
-//   Ebon Might = 칠흑의 힘 (395152, 404269)
-// 매칭: ID 1차, nameKeywords 2차(구 리포트 호환).
-const EXTERNAL_BUFFS: Array<{ ids: number[]; nameKeywords: RegExp; label: string; short: string; color: string }> = [
-  { ids: [37274, 10060], nameKeywords: /power infusion|마력 주입/i, label: "마력 주입", short: "마주", color: "#ec4899" },
-  { ids: [404269, 395152], nameKeywords: /ebon might|흑요석 위세|칠흑의 힘/i, label: "칠흑의 힘", short: "칠흑", color: "#f59e0b" },
-];
+// EXTERNAL_BUFFS는 engine/externalBuffs.ts로 이동 (analysis 파이프라인과 공유).
 
 // 소모품 분류 — CombatantInfo.auras 이름 패턴
 // 정책: oil/rune 류는 신패치 신규 이름을 못 따라가므로 키워드 매칭으로 광범위 노출하되,
@@ -1063,6 +1056,7 @@ function GearTab({ analysis, rankings, refSpec, statScan, setStatScan, statScanL
       <ExternalBuffsSection
         myAuras={analysis.myAuras}
         refAuras={analysis.refAuras}
+        externalBuffsReceived={analysis.externalBuffsReceived}
         refReportCode={analysis.refReportCode}
         refFightID={analysis.refFightID}
         refPlayerId={analysis.refPlayerId}
@@ -1188,16 +1182,15 @@ function ConsumablesSection({ myAuras, refAuras }: { myAuras: GearAura[]; refAur
   );
 }
 
-function ExternalBuffsSection({ myAuras, refAuras, refReportCode, refFightID, refPlayerId }: {
+function ExternalBuffsSection({ myAuras, refAuras, externalBuffsReceived, refReportCode, refFightID, refPlayerId }: {
   myAuras: AuraInfo[];
   refAuras: AuraInfo[];
+  externalBuffsReceived: { my: Record<string, boolean>; ref: Record<string, boolean> };
   refReportCode: string;
   refFightID: number;
   refPlayerId: number;
 }) {
   const [showDiag, setShowDiag] = useState(false);
-  const got = (auras: AuraInfo[], cfg: typeof EXTERNAL_BUFFS[number]) =>
-    auras.some(a => cfg.ids.includes(a.spellId) || cfg.nameKeywords.test(a.name));
 
   // 진단용 — 감지된 전체 aura 콘솔 덤프. 외부 버프 미감지 시 실데이터로 원인 확인.
   useEffect(() => {
@@ -1223,8 +1216,8 @@ function ExternalBuffsSection({ myAuras, refAuras, refReportCode, refFightID, re
         <div className="text-center text-gray-500">나</div>
         <div className="text-center text-gray-500">상대</div>
         {EXTERNAL_BUFFS.map(cfg => {
-          const mine = got(myAuras, cfg);
-          const theirs = got(refAuras, cfg);
+          const mine = externalBuffsReceived.my[cfg.label] ?? false;
+          const theirs = externalBuffsReceived.ref[cfg.label] ?? false;
           return (
             <Fragment key={cfg.label}>
               <div className="font-semibold" style={{ color: cfg.color }}>{cfg.label}</div>

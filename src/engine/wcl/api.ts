@@ -538,6 +538,80 @@ export async function getExternalBuffEvents(
   return results;
 }
 
+/**
+ * 특정 플레이어가 "받은" cast 이벤트 (events dataType: Casts, targetID = 플레이어).
+ * buff event가 누락되는 경우 시전자의 cast 이벤트로 역추정 — WCL 사이트 Buffs 탭도
+ * 이 방식을 병행한다고 알려짐. applybuff 없이 PI 3회를 보여주는 현상 대응.
+ */
+export async function getIncomingCasts(
+  reportCode: string,
+  targetId: number,
+  startTime: number,
+  endTime: number,
+  spellIds: number[],
+): Promise<Array<{ spellId: number; castCount: number }>> {
+  const validIds = spellIds.filter(n => Number.isFinite(n) && n > 0);
+  if (validIds.length === 0) return [];
+  const filter = `ability.id in (${validIds.join(", ")})`;
+
+  const allEvents: any[] = [];
+  let currentStart = startTime;
+  let prevStart = -1;
+  const MAX_PAGES = 20;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const data: any = await query<any>(`
+      query ($code: String!, $startTime: Float!, $endTime: Float!, $targetID: Int!, $filter: String!) {
+        reportData {
+          report(code: $code) {
+            events(
+              dataType: Casts
+              hostilityType: Friendlies
+              startTime: $startTime
+              endTime: $endTime
+              targetID: $targetID
+              filterExpression: $filter
+              limit: 10000
+            ) {
+              data
+              nextPageTimestamp
+            }
+          }
+        }
+      }
+    `, {
+      code: reportCode,
+      startTime: currentStart,
+      endTime,
+      targetID: targetId,
+      filter,
+    });
+    const events = data.reportData?.report?.events;
+    if (!events) break;
+    allEvents.push(...(events.data ?? []));
+    const next = events.nextPageTimestamp ?? 0;
+    if (next <= 0 || next <= prevStart) break;
+    prevStart = currentStart;
+    currentStart = next;
+  }
+
+  const counts: Record<number, number> = {};
+  for (const id of validIds) counts[id] = 0;
+  for (const e of allEvents) {
+    const sid: number | null = e.abilityGameID ?? null;
+    if (sid === null || !(sid in counts)) continue;
+    // type 체크 없이 cast 관련 이벤트 전부 카운트 (cast/begincast)
+    counts[sid] += 1;
+  }
+
+  const results = validIds.map(id => ({ spellId: id, castCount: counts[id] }));
+  const hit = results.filter(r => r.castCount > 0);
+  console.log(
+    `[getIncomingCasts] target=${targetId}:`,
+    hit.length > 0 ? hit.map(r => `#${r.spellId} ${r.castCount}회`).join(" | ") : "없음",
+  );
+  return results;
+}
+
 export async function getBuffs(
   reportCode: string,
   _fightId: number,

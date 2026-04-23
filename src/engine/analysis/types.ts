@@ -149,6 +149,13 @@ export interface FullAnalysis {
   refFightID: number;
   refPlayerId: number;
 
+  // 외부 버프 수령 여부 (label → received). Buffs events + Casts 이벤트 OR 조합.
+  // buff event가 누락되는 경우(WCL API 제약) cast 이벤트로 역추정.
+  externalBuffsReceived: {
+    my: Record<string, boolean>;
+    ref: Record<string, boolean>;
+  };
+
   /** 힐러 모드 여부 (true이면 healing/healingBreakdown 사용, false이면 damage/damageBreakdown) */
   isHealer: boolean;
 
