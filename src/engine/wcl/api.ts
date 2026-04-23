@@ -559,6 +559,7 @@ export async function getBuffs(
               endTime: $endTime
               targetID: $targetID
               dataType: Buffs
+              hostilityType: Friendlies
               limit: 500
             ) {
               data

@@ -3,7 +3,6 @@ import { isAuthenticated, startAuth, handleCallback, logout } from "./engine/wcl
 import { subscribeRateLimit, getRateLimitSnapshot } from "./engine/wcl/rateLimit";
 import {
   getMyCharacters, searchCharacter, getReportInfo, getEncounterRankings, getFightPlayerIds, getMyEncounterRankings,
-  getFightTime, getBuffsTable, getExternalBuffEvents,
   CLASS_NAMES_KR, CLASS_COLORS, DIFFICULTY_NAMES, DIFFICULTY_COLORS,
   getClassIconUrl, getPercentileColor,
   type WCLReportInfo, type WCLRanking, type WCLFight, type ZoneRankingData,
@@ -574,13 +573,6 @@ function RateLimitBadge() {
 // 랭킹 뷰 (영웅특성 필터)
 // ============================================
 
-interface BuffCacheEntry {
-  loading: boolean;
-  error?: string;
-  // 각 외부 버프(마주/칠흑/예지)를 받았는지 여부만. 표시는 O/X 심플 체크.
-  received?: Record<string, boolean>; // key = cfg.label
-}
-
 function RankingsView({ rankings, selectedFight, cName, classID, className, metric, onMetricChange, onAnalysis }: {
   rankings: WCLRanking[];
   selectedFight: WCLFight | null;
@@ -592,7 +584,6 @@ function RankingsView({ rankings, selectedFight, cName, classID, className, metr
   onAnalysis: (r: WCLRanking) => void;
 }) {
   const [specFilter, setSpecFilter] = useState<string>("all");
-  const [bufCache, setBufCache] = useState<Map<string, BuffCacheEntry>>(new Map());
 
   // 특성별 수집
   const specCounts = new Map<string, number>();
@@ -602,7 +593,7 @@ function RankingsView({ rankings, selectedFight, cName, classID, className, metr
   }
   const specList = [...specCounts.entries()].sort((a, b) => b[1] - a[1]);
 
-  // 필터 — 메모화해서 useEffect auto-load가 매 렌더마다 재실행되지 않게.
+  // 필터
   const filtered = useMemo(
     () => specFilter === "all" ? rankings : rankings.filter(r => r.spec === specFilter),
     [rankings, specFilter],
@@ -610,72 +601,6 @@ function RankingsView({ rankings, selectedFight, cName, classID, className, metr
 
   const classFallbackIcon = getClassIconUrl(classID);
   const specIconFor = (spec: string) => getSpecIconUrl(className, spec) || classFallbackIcon;
-
-  const rankKey = (r: WCLRanking) => `${r.reportCode}:${r.fightID}:${r.name}`;
-
-  async function loadBuffs(r: WCLRanking) {
-    const key = rankKey(r);
-    setBufCache(prev => new Map(prev).set(key, { loading: true }));
-    try {
-      const [fight, report] = await Promise.all([
-        getFightTime(r.reportCode, r.fightID),
-        getReportInfo(r.reportCode),
-      ]);
-      if (!fight) throw new Error("전투 시간을 찾을 수 없음");
-      // 동명이인 방지 — 한국 서버/크로스렐름에서 이름 충돌 흔함. server까지 같이 매칭.
-      const norm = (s: string) => s.toLowerCase().replace(/\s+/g, "");
-      const rName = norm(r.name);
-      const rServer = norm(r.server ?? "");
-      const player =
-        report.players.find(p => norm(p.name) === rName && norm(p.server ?? "") === rServer)
-        ?? report.players.find(p => norm(p.name) === rName);
-      if (!player) throw new Error(`${r.name} 플레이어를 리포트에서 찾을 수 없음`);
-      // table(Buffs)는 외부 시전 buff 집계 누락 (WCL 알려진 이슈). events로 보정.
-      // 관심 ID들을 filterExpression으로 명시 쿼리 → 받았는지 여부만 확정.
-      const externalIds = [...new Set(EXTERNAL_BUFFS.flatMap(c => c.ids))];
-      const [table, eventResults] = await Promise.all([
-        getBuffsTable(r.reportCode, player.id, fight.startTime, fight.endTime),
-        getExternalBuffEvents(r.reportCode, player.id, fight.startTime, fight.endTime, externalIds),
-      ]);
-      const eventMap = new Map(eventResults.map(e => [e.spellId, e]));
-
-      const received: Record<string, boolean> = {};
-      for (const cfg of EXTERNAL_BUFFS) {
-        // 1차: events 결과의 ID 매칭. 2차 fallback: table의 ID/이름 매칭 (구 리포트 호환).
-        const gotEvent = cfg.ids.some(id => (eventMap.get(id)?.applyCount ?? 0) > 0);
-        const gotTable = !gotEvent && table.some(b =>
-          cfg.ids.includes(b.spellId) || cfg.nameKeywords.test(b.name)
-        );
-        received[cfg.label] = gotEvent || gotTable;
-      }
-      setBufCache(prev => new Map(prev).set(key, { loading: false, received }));
-    } catch (e) {
-      setBufCache(prev => new Map(prev).set(key, { loading: false, error: e instanceof Error ? e.message : String(e) }));
-    }
-  }
-
-  // 자동 로드 — 사용자 요청: 펼침 버튼 없이 바로 표시.
-  // rate limit 보호 위해 concurrency=4로 순차 처리. spec 필터 변경 시 재트리거.
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      const concurrency = 4;
-      const queue = filtered.filter(r => !bufCache.has(rankKey(r)));
-      const running = new Set<Promise<unknown>>();
-      for (const r of queue) {
-        if (cancelled) return;
-        const p = loadBuffs(r).finally(() => { running.delete(p); });
-        running.add(p);
-        if (running.size >= concurrency) {
-          await Promise.race(running);
-        }
-      }
-    };
-    void run();
-    return () => { cancelled = true; };
-    // bufCache 의도적 배제 — 매 setBufCache마다 effect 재실행되면 무한루프.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered]);
 
   return (
     <div>
@@ -733,48 +658,29 @@ function RankingsView({ rankings, selectedFight, cName, classID, className, metr
         <div className="text-center py-12 text-gray-600 text-sm">데이터 없음</div>
       ) : (
         <div className="wcl-table rounded">
-          <div className="wcl-table-header grid grid-cols-[30px_1fr_140px_90px_60px_1fr] px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-            <div>#</div><div>플레이어</div><div>특성</div><div className="text-right">{metric.toUpperCase()}</div><div className="text-right">시간</div><div className="text-right">외부 버프</div>
+          <div className="wcl-table-header grid grid-cols-[30px_1fr_140px_90px_60px] px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+            <div>#</div><div>플레이어</div><div>특성</div><div className="text-right">{metric.toUpperCase()}</div><div className="text-right">시간</div>
           </div>
-          {filtered.map((r, i) => {
-            const key = rankKey(r);
-            const cacheEntry = bufCache.get(key);
-            return (
-              <div key={`${r.name}-${r.server}-${i}`}
-                className="wcl-table-row w-full grid grid-cols-[30px_1fr_140px_90px_60px_1fr] px-3 py-2.5 items-center text-left cursor-pointer"
-                onClick={() => onAnalysis(r)}>
-                <div className="text-xs font-bold font-mono" style={{ color: i === 0 ? "#ffd700" : i < 3 ? "#c0c0c0" : "#888" }}>{i + 1}</div>
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs text-white truncate">{r.name}</span>
-                  <span className="text-[10px] text-gray-600 truncate">{r.server}</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-[10px] text-gray-400 min-w-0">
-                  {(() => { const ic = specIconFor(r.spec); return ic ? <img src={ic} alt="" className="w-4 h-4 rounded-sm flex-shrink-0" onError={e => (e.currentTarget.style.display = "none")} /> : null; })()}
-                  <div className="flex flex-col leading-tight min-w-0">
-                    <span className="text-gray-300 truncate">{specNameKr(r.spec)}</span>
-                    {r.heroTalent && <span className="text-[9px] truncate" style={{ color: "#a78bfa" }}>{specNameKr(r.heroTalent)}</span>}
-                  </div>
-                </div>
-                <div className="text-right text-xs font-mono" style={{ color: "#a78bfa" }}>{fmtDPS(r.amount)}</div>
-                <div className="text-right text-[11px] text-gray-500 font-mono">{fmtDur(r.duration)}</div>
-                {/* 외부 버프: O/X 심플 표시 */}
-                <div className="flex justify-end items-center gap-2 text-[11px] font-mono">
-                  {cacheEntry?.loading && (
-                    <div className="w-3 h-3 border-2 border-gray-700 border-t-purple-500 rounded-full animate-spin" />
-                  )}
-                  {cacheEntry?.error && <span className="text-[10px] text-red-400">에러</span>}
-                  {cacheEntry?.received && EXTERNAL_BUFFS.map(cfg => {
-                    const got = cacheEntry.received![cfg.label];
-                    return (
-                      <span key={cfg.label} style={{ color: got ? cfg.color : "#3a3a4a" }}>
-                        {cfg.short} {got ? "O" : "X"}
-                      </span>
-                    );
-                  })}
+          {filtered.map((r, i) => (
+            <div key={`${r.name}-${r.server}-${i}`}
+              className="wcl-table-row w-full grid grid-cols-[30px_1fr_140px_90px_60px] px-3 py-2.5 items-center text-left cursor-pointer"
+              onClick={() => onAnalysis(r)}>
+              <div className="text-xs font-bold font-mono" style={{ color: i === 0 ? "#ffd700" : i < 3 ? "#c0c0c0" : "#888" }}>{i + 1}</div>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-xs text-white truncate">{r.name}</span>
+                <span className="text-[10px] text-gray-600 truncate">{r.server}</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px] text-gray-400 min-w-0">
+                {(() => { const ic = specIconFor(r.spec); return ic ? <img src={ic} alt="" className="w-4 h-4 rounded-sm flex-shrink-0" onError={e => (e.currentTarget.style.display = "none")} /> : null; })()}
+                <div className="flex flex-col leading-tight min-w-0">
+                  <span className="text-gray-300 truncate">{specNameKr(r.spec)}</span>
+                  {r.heroTalent && <span className="text-[9px] truncate" style={{ color: "#a78bfa" }}>{specNameKr(r.heroTalent)}</span>}
                 </div>
               </div>
-            );
-          })}
+              <div className="text-right text-xs font-mono" style={{ color: "#a78bfa" }}>{fmtDPS(r.amount)}</div>
+              <div className="text-right text-[11px] text-gray-500 font-mono">{fmtDur(r.duration)}</div>
+            </div>
+          ))}
         </div>
       )}
     </div>
