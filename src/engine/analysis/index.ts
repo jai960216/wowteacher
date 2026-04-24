@@ -40,7 +40,9 @@ export interface AnalysisInput {
 }
 
 export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysis> {
-  devLog(`[analysis] 데이터 수집 시작 (12 쿼리 병렬): my=${input.myReport.code}:${input.myFight.id} ref=${input.refReportCode}:${input.refFight.id}`);
+  // 기본 12쿼리 병렬 + 외부 cast 2쿼리 + (힐러 모드면 healing 4쿼리) + 각 쿼리의 페이지네이션
+  // 실 HTTP 요청은 전투 길이·이벤트 밀도에 따라 분석 1회당 30~80회
+  devLog(`[analysis] 데이터 수집 시작: my=${input.myReport.code}:${input.myFight.id} ref=${input.refReportCode}:${input.refFight.id}`);
   // 각 쿼리별 완료 시각 로그 — hang 지점 추적용
   const track = <T>(label: string, p: Promise<T>): Promise<T> => {
     const t0 = performance.now();

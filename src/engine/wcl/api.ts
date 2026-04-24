@@ -801,7 +801,6 @@ export interface WCLRanking {
   fightID: number;
   rank: number;
   bracketData: number;  // ilvl 구간 (WCL bracket ID)
-  heroTalent?: string;  // includeCombatantInfo 응답에서 auras로 감지. 실패 시 undefined
   externalBuffs?: Array<{ spellId: number; name: string; count: number; uptimePercent: number }>;
 }
 
@@ -1046,6 +1045,8 @@ export async function getEncounterRankings(
   if (difficulty > 0) vars.difficulty = difficulty;
   if (bracket > 0) vars.bracket = bracket;
 
+  // includeCombatantInfo는 쿼리 포인트를 대폭 증가시킴 — 랭커의 영웅특성은
+  // 실제 분석 시점에 getCombatantInfo로 받아서 쓰므로 여기선 필요 없음.
   const data: any = await query(`
     query ($id: Int!, $class: String, $spec: String, $difficulty: Int, $page: Int, $bracket: Int, $partition: Int, $metric: CharacterRankingMetricType) {
       worldData {
@@ -1059,7 +1060,6 @@ export async function getEncounterRankings(
             page: $page
             partition: $partition
             metric: $metric
-            includeCombatantInfo: true
           )
         }
       }
@@ -1130,26 +1130,19 @@ export async function getEncounterRankings(
     }
   }
 
-  const mapped: WCLRanking[] = filtered.map((r: any, i: number) => {
-    // combatantInfo.auras에서 영웅 특성 감지 (이름 기반)
-    const ci = r.combatantInfo ?? {};
-    const auraNames: string[] = (ci.auras ?? []).map((a: any) => a?.name ?? "").filter(Boolean);
-    const detectedHero = detectHeroTalent(auraNames, classNoSpace);
-    return {
-      name: r.name ?? "",
-      server: r.server?.name ?? r.serverName ?? "",
-      region: r.server?.region ?? r.regionName ?? "",
-      class: extractClassName(r) || className,
-      spec: r.spec ?? r.specName ?? specName ?? "",
-      amount: r.amount ?? r.total ?? 0,
-      duration: r.duration ?? 0,
-      reportCode: r.report?.code ?? r.reportCode ?? "",
-      fightID: r.report?.fightID ?? r.fightID ?? 0,
-      rank: i + 1,
-      bracketData: r.bracketData ?? 0,
-      heroTalent: detectedHero || undefined,
-    };
-  });
+  const mapped: WCLRanking[] = filtered.map((r: any, i: number) => ({
+    name: r.name ?? "",
+    server: r.server?.name ?? r.serverName ?? "",
+    region: r.server?.region ?? r.regionName ?? "",
+    class: extractClassName(r) || className,
+    spec: r.spec ?? r.specName ?? specName ?? "",
+    amount: r.amount ?? r.total ?? 0,
+    duration: r.duration ?? 0,
+    reportCode: r.report?.code ?? r.reportCode ?? "",
+    fightID: r.report?.fightID ?? r.fightID ?? 0,
+    rank: i + 1,
+    bracketData: r.bracketData ?? 0,
+  }));
 
   return {
     rankings: mapped,

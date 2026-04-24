@@ -726,10 +726,7 @@ function RankingsView({ rankings, selectedFight, cName, classID, className, metr
               </div>
               <div className="flex items-center gap-1.5 text-[10px] text-gray-400 min-w-0">
                 {(() => { const ic = specIconFor(r.spec); return ic ? <img src={ic} alt="" className="w-4 h-4 rounded-sm flex-shrink-0" onError={e => (e.currentTarget.style.display = "none")} /> : null; })()}
-                <div className="flex flex-col leading-tight min-w-0">
-                  <span className="text-gray-300 truncate">{specNameKr(r.spec)}</span>
-                  {r.heroTalent && <span className="text-[9px] truncate" style={{ color: "#a78bfa" }}>{specNameKr(r.heroTalent)}</span>}
-                </div>
+                <span className="text-gray-300 truncate">{specNameKr(r.spec)}</span>
               </div>
               <div className="text-right text-xs font-mono" style={{ color: "#a78bfa" }}>{fmtDPS(r.amount)}</div>
               <div className="text-right text-[11px] text-gray-500 font-mono">{fmtDur(r.duration)}</div>
