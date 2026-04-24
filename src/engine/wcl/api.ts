@@ -24,9 +24,14 @@ const API_BASE = import.meta.env.VITE_API_BASE || ""; // 프로덕션은 same-or
 
 async function fetchSharedCache<T>(path: string, params: Record<string, string | number>): Promise<T | null> {
   try {
+    const token = getToken();
+    if (!token) return null; // 비로그인 시엔 서버 경유 불가
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) qs.set(k, String(v));
-    const res = await fetch(`${API_BASE}/api/wcl/${path}?${qs}`, { credentials: "omit" });
+    const res = await fetch(`${API_BASE}/api/wcl/${path}?${qs}`, {
+      credentials: "omit",
+      headers: { Authorization: `Bearer ${token}` },
+    });
     if (!res.ok) return null; // 실패 시 직접 WCL fallback
     return await res.json() as T;
   } catch {

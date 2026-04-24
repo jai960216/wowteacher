@@ -5,7 +5,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { applyCors } from "../_lib/cors";
 import { cacheGet, cacheSet, TTL } from "../_lib/cache";
-import { wclQuery, WclError } from "../_lib/wclToken";
+import { wclQuery, WclError, extractUserToken } from "../_lib/wclToken";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (applyCors(req, res)) return;
@@ -27,6 +27,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return;
     }
 
+    const userToken = extractUserToken(req.headers.authorization);
+    if (!userToken) {
+      res.status(401).json({ error: "missing user token" });
+      return;
+    }
+
     const data = await wclQuery<{ worldData?: { encounter?: { zone?: { partitions?: Array<{ id: number; default: boolean; name: string }> } } } }>(`
       query ($id: Int!) {
         worldData {
@@ -38,7 +44,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
       }
-    `, { id: encounterId });
+    `, { id: encounterId }, userToken);
 
     const partitions = data.worldData?.encounter?.zone?.partitions ?? [];
     const partition = partitions.find(p => p.default)?.id

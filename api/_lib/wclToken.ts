@@ -1,59 +1,34 @@
 // ============================================
-// WCL client_credentials 토큰 (서버 전용)
+// WCL proxy — 유저 토큰으로 WCL 호출
 // ============================================
-// client_credentials 흐름으로 서버 자체 토큰 발급.
-// 유저 토큰과 분리돼 공유 캐시 조회용으로 사용.
+// PKCE public 클라이언트라 server-side client_credentials 불가.
+// 대신 클라이언트가 Authorization 헤더에 user token 넣어 호출 → 서버가 그대로 WCL에 전달.
+// 캐시 히트는 토큰 무관하게 반환되므로 quota는 사용자들 간 자연 분산됨.
 
-interface TokenCache {
-  token: string;
-  expiresAt: number; // ms
+export class WclError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
 }
 
-let cached: TokenCache | null = null;
-
-export async function getServerWclToken(): Promise<string> {
-  if (cached && Date.now() < cached.expiresAt - 60_000) {
-    return cached.token;
-  }
-
-  const clientId = process.env.WARCRAFTLOGS_CLIENT_ID || process.env.VITE_WARCRAFTLOGS_CLIENT_ID;
-  const clientSecret = process.env.WARCRAFTLOGS_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    throw new Error("WCL 서버 토큰 환경변수 미설정 (WARCRAFTLOGS_CLIENT_ID / WARCRAFTLOGS_CLIENT_SECRET)");
-  }
-
-  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
-  const res = await fetch("https://www.warcraftlogs.com/oauth/token", {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${basicAuth}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: "grant_type=client_credentials",
-  });
-
-  if (!res.ok) {
-    throw new Error(`WCL 토큰 발급 실패 ${res.status}: ${await res.text().catch(() => "")}`);
-  }
-
-  const data = await res.json() as { access_token: string; expires_in: number };
-  cached = {
-    token: data.access_token,
-    expiresAt: Date.now() + data.expires_in * 1000,
-  };
-  return cached.token;
+export function extractUserToken(authHeader: string | string[] | undefined): string | null {
+  if (!authHeader) return null;
+  const raw = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+  if (!raw.startsWith("Bearer ")) return null;
+  return raw.slice(7);
 }
 
 export async function wclQuery<T = unknown>(
   gql: string,
-  variables: Record<string, unknown> = {},
+  variables: Record<string, unknown>,
+  userToken: string,
 ): Promise<T> {
-  const token = await getServerWclToken();
   const res = await fetch("https://www.warcraftlogs.com/api/v2/client", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${userToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ query: gql, variables }),
@@ -66,12 +41,4 @@ export async function wclQuery<T = unknown>(
     throw new WclError(0, json.errors[0]?.message ?? "GraphQL error");
   }
   return json.data as T;
-}
-
-export class WclError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
 }

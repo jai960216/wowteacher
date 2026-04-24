@@ -6,7 +6,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { applyCors } from "../_lib/cors";
 import { cacheGet, cacheSet, TTL } from "../_lib/cache";
-import { wclQuery, WclError } from "../_lib/wclToken";
+import { wclQuery, WclError, extractUserToken } from "../_lib/wclToken";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (applyCors(req, res)) return;
@@ -37,6 +37,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return;
     }
 
+    // 캐시 miss — 유저 토큰으로 WCL 호출
+    const userToken = extractUserToken(req.headers.authorization);
+    if (!userToken) {
+      res.status(401).json({ error: "missing user token" });
+      return;
+    }
+
     const vars: Record<string, unknown> = { id: encounterId, page, partition, metric };
     if (className) vars.class = className;
     if (specName) vars.spec = specName;
@@ -60,7 +67,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
       }
-    `, vars);
+    `, vars, userToken);
 
     await cacheSet(cacheKey, data, TTL.rankings);
     res.setHeader("X-Cache", "MISS");
