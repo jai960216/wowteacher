@@ -811,16 +811,17 @@ export async function getMyEncounterRankings(
   serverRegion: string,
   encounterID: number,
   difficulty: number,
+  metric: "dps" | "hps" = "dps",
 ): Promise<Array<{ reportCode: string; fightID: number; amount: number; startTime: number; duration: number }>> {
   const data: any = await query(`
-    query ($name: String!, $server: String!, $region: String!, $encounterID: Int!, $difficulty: Int!) {
+    query ($name: String!, $server: String!, $region: String!, $encounterID: Int!, $difficulty: Int!, $metric: CharacterRankingMetricType!) {
       characterData {
         character(name: $name, serverSlug: $server, serverRegion: $region) {
-          encounterRankings(encounterID: $encounterID, difficulty: $difficulty)
+          encounterRankings(encounterID: $encounterID, difficulty: $difficulty, metric: $metric)
         }
       }
     }
-  `, { name, server: serverSlug, region: serverRegion, encounterID, difficulty });
+  `, { name, server: serverSlug, region: serverRegion, encounterID, difficulty, metric });
 
   const raw = data.characterData?.character?.encounterRankings;
   const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
@@ -893,21 +894,22 @@ export async function searchCharacter(
   name: string,
   serverSlug: string,
   serverRegion: string,
+  metric: "dps" | "hps" = "dps",
 ): Promise<{ classID: number; className: string; allZoneRankings: ZoneRankingData[] }> {
   // 난이도별 zoneRankings를 GraphQL alias로 한번에 가져옴
   const data: any = await query(`
-    query ($name: String!, $server: String!, $region: String!) {
+    query ($name: String!, $server: String!, $region: String!, $metric: CharacterRankingMetricType!) {
       characterData {
         character(name: $name, serverSlug: $server, serverRegion: $region) {
           name
           classID
-          mythic: zoneRankings(difficulty: 5)
-          heroic: zoneRankings(difficulty: 4)
-          normal: zoneRankings(difficulty: 3)
+          mythic: zoneRankings(difficulty: 5, metric: $metric)
+          heroic: zoneRankings(difficulty: 4, metric: $metric)
+          normal: zoneRankings(difficulty: 3, metric: $metric)
         }
       }
     }
-  `, { name, server: serverSlug, region: serverRegion });
+  `, { name, server: serverSlug, region: serverRegion, metric });
 
   const char = data.characterData.character;
 

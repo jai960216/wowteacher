@@ -51,6 +51,7 @@ function App() {
   const [loadingMsg, setLoadingMsg] = useState("");
   const [step, _setStep] = useState<Step>(isAuthenticated() ? "characters" : "login");
   const [showDonate, setShowDonate] = useState(false);
+  const [donateMethod, setDonateMethod] = useState<"toss" | "kakao">("toss");
   const setStep = (s: Step) => { devLog("[step]", step, "→", s); _setStep(s); };
 
   const [myChars, setMyChars] = useState<MyCharacter[]>([]);
@@ -136,7 +137,13 @@ function App() {
       setMetric(isHealer ? "hps" : "dps");
       devLog("[selectChar] 힐러 감지:", isHealer, "step → overview");
       setSelectedChar(mergedChar);
-      setAllZoneRankings(data.allZoneRankings);
+      // 힐러면 HPS 기준으로 보스별 기록 재조회 — 헬퍼 클릭 유도를 위해 HPS 값을 표시
+      if (isHealer) {
+        const hpsData = await searchCharacter(char.name, char.serverSlug, char.region, "hps");
+        setAllZoneRankings(hpsData.allZoneRankings);
+      } else {
+        setAllZoneRankings(data.allZoneRankings);
+      }
       setStep("overview");
     } catch (e) { setError(errorMessage(e)); }
     finally { setLoading(false); }
@@ -190,7 +197,7 @@ function App() {
     try {
       const kills = await getMyEncounterRankings(
         selectedChar.name, selectedChar.serverSlug, selectedChar.region,
-        encounterID, difficulty,
+        encounterID, difficulty, metric,
       );
       setMyKills(kills);
       if (kills.length <= 1) {
@@ -254,7 +261,7 @@ function App() {
           setLoadingMsg("내 킬 기록 조회...");
           const myRanks = await getMyEncounterRankings(
             selectedChar.name, selectedChar.serverSlug, selectedChar.region,
-            selectedFight!.encounterID, selectedFight!.difficulty,
+            selectedFight!.encounterID, selectedFight!.difficulty, metric,
           );
           if (myRanks.length === 0) throw new Error("해당 보스의 내 킬 기록을 찾을 수 없습니다.");
           bestRank = myRanks[0];
@@ -399,7 +406,7 @@ function App() {
         </div>
       </nav>
 
-      {/* 후원 모달 — 토스 송금 QR */}
+      {/* 후원 모달 — 토스/카카오페이 선택 */}
       {showDonate && (
         <div
           onClick={() => setShowDonate(false)}
@@ -415,10 +422,26 @@ function App() {
             <h3 className="text-base font-bold text-white mb-2">커피 한 잔 사주기</h3>
             <p className="text-[11px] text-gray-400 mb-4 leading-relaxed">
               wowteacher 유지·개선에 도움이 돼요.<br />
-              아래 QR을 토스 앱으로 스캔하면<br />
+              원하는 결제수단의 QR을 스캔하면<br />
               <span style={{ color: "#f59e0b" }}>2,000원 송금 페이지</span>가 열립니다.
             </p>
-            <img src="/TossQR.jpg" alt="토스 송금 QR" className="w-full rounded-lg" style={{ background: "#fff", padding: "8px" }} />
+            <div className="flex gap-0.5 p-0.5 rounded mb-3" style={{ background: "#0d0d15", border: "1px solid #1c1c30" }}>
+              {(["toss", "kakao"] as const).map(key => (
+                <button key={key} onClick={() => setDonateMethod(key)}
+                  className="flex-1 text-[11px] px-3 py-1 rounded font-semibold transition hover:brightness-125"
+                  style={donateMethod === key
+                    ? { background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }
+                    : { background: "transparent", color: "#9ca3af" }}>
+                  {key === "toss" ? "토스" : "카카오페이"}
+                </button>
+              ))}
+            </div>
+            <img
+              src={donateMethod === "toss" ? "/TossQR.jpg" : "/KakaoQR.png"}
+              alt={donateMethod === "toss" ? "토스 송금 QR" : "카카오페이 송금 QR"}
+              className="w-full rounded-lg"
+              style={{ background: "#fff", padding: "8px" }}
+            />
             <button
               onClick={() => setShowDonate(false)}
               className="mt-4 text-[11px] text-gray-500 hover:text-white"
@@ -497,7 +520,7 @@ function App() {
                 </div>
                 <div className="wcl-table rounded">
                   <div className="wcl-table-header grid grid-cols-[1fr_60px_60px_90px_40px_60px] px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-                    <div>Boss</div><div className="text-right">Best %</div><div className="text-right">Med %</div><div className="text-right">DPS</div><div className="text-center">Kills</div><div className="text-right">Fastest</div>
+                    <div>Boss</div><div className="text-right">Best %</div><div className="text-right">Med %</div><div className="text-right">{metric === "hps" ? "HPS" : "DPS"}</div><div className="text-center">Kills</div><div className="text-right">Fastest</div>
                   </div>
                   {zr.bosses.map((b, i) => {
                     return (
@@ -533,7 +556,7 @@ function App() {
             <p className="text-xs text-gray-500 mb-4">비교에 사용할 내 킬 기록을 선택하세요</p>
             <div className="wcl-table rounded">
               <div className="wcl-table-header grid grid-cols-[1fr_100px_80px] px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-                <div>날짜</div><div className="text-right">DPS</div><div className="text-right">시간</div>
+                <div>날짜</div><div className="text-right">{metric === "hps" ? "HPS" : "DPS"}</div><div className="text-right">시간</div>
               </div>
               {myKills.map((kill) => {
                 const date = new Date(kill.startTime);
