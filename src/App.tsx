@@ -1533,37 +1533,46 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       const width = el.clientWidth || 1;
       queueDelta((dx / width) * rangeLen);
     };
-    // 마우스 드래그 (데스크탑). threshold 넘으면 click 억제해 내부 a/img click 방지.
+    // 포인터 이벤트 + setPointerCapture — 드래그 중 어떤 자식 요소로 이동해도 캡처 유지됨
+    // 기존 mouse events는 <a>(스펠 아이콘)의 기본 link-drag이 mouseup을 가로채는 문제가 있었음
     const DRAG_THRESHOLD = 4;
-    let mouseDownStartX = 0;
-    let mouseDownPrevX = 0;
-    let mouseDownActive = false;
+    let pointerStartX = 0;
+    let pointerPrevX = 0;
+    let pointerId: number | null = null;
     let dragExceeded = false;
-    const mouseMove = (e: MouseEvent) => {
-      if (!mouseDownActive) return;
+    const pointerDown = (e: PointerEvent) => {
+      if (e.pointerType === "touch") return; // 터치는 touchmove에서 처리
+      if (e.button !== 0) return;
+      const target = e.target as HTMLElement;
+      if (target.closest("button, select, input, textarea")) return;
+      e.preventDefault();
+      pointerId = e.pointerId;
+      dragExceeded = false;
+      pointerStartX = e.clientX;
+      pointerPrevX = e.clientX;
+      // 캡처 — 이후 pointermove/up이 어떤 자식 위에 있든 el로 옴
+      el.setPointerCapture(e.pointerId);
+    };
+    const pointerMove = (e: PointerEvent) => {
+      if (pointerId === null || e.pointerId !== pointerId) return;
       const curX = e.clientX;
       if (!dragExceeded) {
-        if (Math.abs(curX - mouseDownStartX) < DRAG_THRESHOLD) return;
+        if (Math.abs(curX - pointerStartX) < DRAG_THRESHOLD) return;
         dragExceeded = true;
         el.style.cursor = "grabbing";
       }
-      const dx = mouseDownPrevX - curX;
+      const dx = pointerPrevX - curX;
       if (dx === 0) return;
-      mouseDownPrevX = curX;
+      pointerPrevX = curX;
       const width = el.clientWidth || 1;
-      // 감도 3배 — 1:1이면 체감이 너무 느려 "고정된" 느낌을 줌
-      // dx < 1 guard 절대 금지 — 천천히 드래그하면 프레임당 dx<1이 되는데
-      // prevX를 먼저 갱신해버려서 sub-pixel 움직임이 영원히 유실됨
       queueDelta((dx / width) * rangeLen * 3);
     };
-    const mouseUp = () => {
-      if (!mouseDownActive) return;
-      mouseDownActive = false;
+    const pointerUp = (e: PointerEvent) => {
+      if (pointerId === null || e.pointerId !== pointerId) return;
+      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+      pointerId = null;
       el.style.cursor = "grab";
-      document.removeEventListener("mousemove", mouseMove);
-      document.removeEventListener("mouseup", mouseUp);
       if (dragExceeded) {
-        // 드래그였다면 뒤따르는 click 1회 억제 (스킬 아이콘 link 새 탭 방지)
         const suppress = (ce: MouseEvent) => {
           ce.stopPropagation();
           ce.preventDefault();
@@ -1573,38 +1582,28 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       }
       dragExceeded = false;
     };
-    const mouseDown = (e: MouseEvent) => {
-      if (e.button !== 0) return;
-      const target = e.target as HTMLElement;
-      // 입력 컨트롤 위에선 드래그 시작 안 함. a/img는 threshold로 click 분리.
-      if (target.closest("button, select, input, textarea")) return;
-      // 기본 텍스트 셀렉션 차단 — 이게 없으면 드래그가 문자열 selection으로 하이재킹됨
-      e.preventDefault();
-      mouseDownActive = true;
-      dragExceeded = false;
-      mouseDownStartX = e.clientX;
-      mouseDownPrevX = e.clientX;
-      document.addEventListener("mousemove", mouseMove);
-      document.addEventListener("mouseup", mouseUp);
-    };
-    // 이미지 드래그(ghost image) 차단 — 스펠 아이콘이 드래그돼서 끊김
     const dragStart = (e: DragEvent) => e.preventDefault();
     el.addEventListener("wheel", wheelHandler, { passive: false });
     el.addEventListener("touchstart", touchStart, { passive: true });
     el.addEventListener("touchmove", touchMove, { passive: false });
-    el.addEventListener("mousedown", mouseDown);
+    el.addEventListener("pointerdown", pointerDown);
+    el.addEventListener("pointermove", pointerMove);
+    el.addEventListener("pointerup", pointerUp);
+    el.addEventListener("pointercancel", pointerUp);
     el.addEventListener("dragstart", dragStart);
     el.style.cursor = "grab";
     el.style.userSelect = "none";
+    el.style.touchAction = "pan-y"; // 세로 스크롤은 브라우저에게 양보, 가로는 우리가 처리
     (el.style as CSSStyleDeclaration & { webkitUserSelect?: string }).webkitUserSelect = "none";
     return () => {
       el.removeEventListener("wheel", wheelHandler);
       el.removeEventListener("touchstart", touchStart);
       el.removeEventListener("touchmove", touchMove);
-      el.removeEventListener("mousedown", mouseDown);
+      el.removeEventListener("pointerdown", pointerDown);
+      el.removeEventListener("pointermove", pointerMove);
+      el.removeEventListener("pointerup", pointerUp);
+      el.removeEventListener("pointercancel", pointerUp);
       el.removeEventListener("dragstart", dragStart);
-      document.removeEventListener("mousemove", mouseMove);
-      document.removeEventListener("mouseup", mouseUp);
       if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, [rangeLen, duration]);
