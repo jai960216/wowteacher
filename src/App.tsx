@@ -53,6 +53,7 @@ function App() {
   const [step, _setStep] = useState<Step>(isAuthenticated() ? "characters" : "login");
   const [showDonate, setShowDonate] = useState(false);
   const [donateMethod, setDonateMethod] = useState<"toss" | "kakao">("toss");
+  const [showLegal, setShowLegal] = useState<"privacy" | "terms" | null>(null);
   const setStep = (s: Step) => { devLog("[step]", step, "→", s); _setStep(s); };
 
   const [myChars, setMyChars] = useState<MyCharacter[]>([]);
@@ -621,6 +622,59 @@ function App() {
             setError={setError} />
         )}
       </div>
+
+      {/* 푸터 — Attribution / 비제휴 / 법적 링크 / 피드백 */}
+      <footer className="max-w-[1200px] mx-auto px-4 py-6 mt-8 text-[11px] text-gray-500" style={{ borderTop: "1px solid #1c1c30" }}>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 justify-between">
+          <div className="flex flex-wrap gap-x-3 gap-y-1 items-center">
+            <span>
+              Data provided by{" "}
+              <a href="https://www.warcraftlogs.com/" target="_blank" rel="noopener noreferrer"
+                className="text-gray-300 hover:text-white underline">Warcraft Logs</a>
+            </span>
+            <span className="text-gray-700">·</span>
+            <span className="text-gray-600">This site is not affiliated with or endorsed by Warcraft Logs · 본 사이트는 Warcraft Logs의 공식 파트너가 아닙니다</span>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => setShowLegal("privacy")} className="hover:text-white underline">개인정보</button>
+            <button onClick={() => setShowLegal("terms")} className="hover:text-white underline">이용약관</button>
+            <a href="mailto:ducklogtest@gmail.com" className="hover:text-white underline">의견·버그 제보</a>
+          </div>
+        </div>
+      </footer>
+
+      {/* Privacy / Terms 모달 */}
+      {showLegal && (
+        <div onClick={() => setShowLegal(null)} className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.8)" }}>
+          <div onClick={(e) => e.stopPropagation()} className="wcl-card p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto"
+            style={{ background: "#131320", border: "1px solid #2a2a40" }}>
+            <h3 className="text-base font-bold text-white mb-3">
+              {showLegal === "privacy" ? "개인정보 처리방침" : "이용약관"}
+            </h3>
+            <div className="text-xs text-gray-300 leading-relaxed space-y-2">
+              {showLegal === "privacy" ? (
+                <>
+                  <p>• 본 사이트는 별도 서버·데이터베이스를 운영하지 않습니다. 모든 분석은 브라우저 내에서 처리됩니다.</p>
+                  <p>• WarcraftLogs OAuth 액세스 토큰은 <b>브라우저 localStorage에만 저장</b>되며 서버로 전송·보관되지 않습니다.</p>
+                  <p>• 분석 결과(전투 로그, 장비, 스탯 등)는 세션 내에서만 사용되고 외부로 전송되지 않습니다. 일부는 성능을 위해 localStorage에 캐시됩니다 (로그아웃 시 자동 삭제).</p>
+                  <p>• 쿠키, Google Analytics, Sentry 등 트래킹 도구를 <b>사용하지 않습니다</b>.</p>
+                  <p>• 외부 리소스 호출: WarcraftLogs(로그 조회), Wowhead(스펠 툴팁), wow.zamimg.com(아이콘), assets.rpglogs.com(보스 아이콘). 해당 서비스의 자체 로그가 남을 수 있습니다.</p>
+                  <p>• 의견·문의: <a href="mailto:ducklogtest@gmail.com" className="text-purple-400 hover:underline">ducklogtest@gmail.com</a></p>
+                </>
+              ) : (
+                <>
+                  <p>• 본 사이트는 WoW 플레이어 개인이 운영하는 비영리 커뮤니티 도구입니다. Warcraft Logs의 공식 파트너가 아닙니다.</p>
+                  <p>• 사용자는 본인의 WarcraftLogs 계정 약관(<a href="https://www.warcraftlogs.com/help/tos" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:underline">Terms of Service</a>)을 준수해야 합니다.</p>
+                  <p>• 본 사이트는 WarcraftLogs API의 응답을 그대로 사용합니다. 데이터 정확성·가용성은 WarcraftLogs에 의존하며 보증하지 않습니다.</p>
+                  <p>• 서비스는 예고 없이 변경·중단될 수 있습니다.</p>
+                  <p>• 본 사이트 사용으로 발생하는 손해에 대해 제작자는 책임지지 않습니다.</p>
+                </>
+              )}
+            </div>
+            <button onClick={() => setShowLegal(null)} className="mt-4 text-[11px] text-gray-500 hover:text-white">닫기</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -799,7 +853,7 @@ function AnalysisView({ analysis, spellMeta, cColor, activeTab, setActiveTab,
     <div className="space-y-4">
       {/* 헤더: 장비 비교 + DPS 요약 */}
       <div className="wcl-card p-5">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div className="text-sm">
             <span style={{ color: cColor }}>{a.playerName}</span>
             {/* 영웅특성 우선 — WCL combatantInfo.heroTreeName 기반. 없으면 detectHeroTalent 결과 fallback. */}
@@ -815,9 +869,22 @@ function AnalysisView({ analysis, spellMeta, cColor, activeTab, setActiveTab,
             })()}
             <span className="text-gray-600 ml-3 text-xs">{a.encounter}</span>
           </div>
-          <div className="flex gap-4 text-xs text-gray-500">
-            <span>내 전투 {a.fightDuration.my.toFixed(0)}초</span>
+          <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
+            <span>내 {a.fightDuration.my.toFixed(0)}초</span>
             <span>상대 {a.fightDuration.ref.toFixed(0)}초</span>
+            {/* Warcraft Logs 원본 리포트 링크 — Attribution 예의상 필수 */}
+            <a href={`https://ko.warcraftlogs.com/reports/${a.myReportCode}?fight=${a.myFightID}&source=${a.myPlayerId}`}
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold hover:brightness-125 transition"
+              style={{ background: "#a78bfa15", border: "1px solid #a78bfa55", color: "#a78bfa" }}>
+              내 로그 ↗
+            </a>
+            <a href={`https://ko.warcraftlogs.com/reports/${a.refReportCode}?fight=${a.refFightID}&source=${a.refPlayerId}`}
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold hover:brightness-125 transition"
+              style={{ background: "#fbbf2415", border: "1px solid #fbbf2455", color: "#fbbf24" }}>
+              상대 로그 ↗
+            </a>
           </div>
         </div>
 
