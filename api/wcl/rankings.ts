@@ -4,9 +4,9 @@
 // Query params: encounterId, className, specName, difficulty, page, bracket, partition, metric
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { applyCors } from "../_lib/cors";
-import { cacheGet, cacheSet, TTL } from "../_lib/cache";
-import { wclQuery, WclError, extractUserToken } from "../_lib/wclToken";
+import { applyCors } from "../_lib/cors.js";
+import { cacheGet, cacheSet, TTL } from "../_lib/cache.js";
+import { wclQuery, WclError, extractUserToken } from "../_lib/wclToken.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (applyCors(req, res)) return;

@@ -2,7 +2,7 @@
 // 공유 캐시 헬퍼 — TTL + 버전 관리
 // ============================================
 
-import { supabase } from "./supabase";
+import { supabase } from "./supabase.js";
 
 // 캐시 스키마 버전 — WCL 스키마 변경·패치 시 bump해서 전체 무효화
 const CACHE_VERSION = process.env.CACHE_VERSION || "1";

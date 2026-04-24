@@ -34,3 +34,5 @@ ENGINE_REDESIGN.md
 *.njsproj
 *.sln
 *.sw?
+
+.vercel
