@@ -44,12 +44,6 @@ export interface PatternAnalysis {
   };
   /** 상태별 분석 (일반 + 탈태) */
   byState: StateAnalysis[];
-  /** 빈 시간 직전 패턴 */
-  preGapPatterns: Array<{
-    gapStart: number;
-    gapDuration: number;
-    lastCasts: CastSnapshot[];
-  }>;
   /** 탈태 사용 비교 */
   metaUsage: {
     myCount: number;
@@ -68,7 +62,6 @@ export interface PatternAnalysis {
 // ---- 분석 함수 ----
 
 const OPENER_SIZE = 15;
-const GAP_THRESHOLD = 2.0;
 
 export function analyzePatterns(
   mySnapshots: CastSnapshot[],
@@ -99,16 +92,13 @@ export function analyzePatterns(
     buildStateAnalysis("탈태", true, myMeta, refMeta, ranges),
   ];
 
-  // 빈 시간 패턴
-  const preGapPatterns = findPreGapPatterns(mySnapshots);
-
   // 탈태 사용 비교
   const metaUsage = buildMetaUsage(mySnapshots, refSnapshots);
 
   // 인사이트
-  const insights = generateInsights(preGapPatterns, metaUsage);
+  const insights = generateInsights(metaUsage);
 
-  return { opener, byState, preGapPatterns, metaUsage, insights };
+  return { opener, byState, metaUsage, insights };
 }
 
 // ---- 내부 함수 ----
@@ -196,20 +186,7 @@ function buildResourceHabit(
   return { rangeLabel: label, rangeMin: min, rangeMax: max, myTotal: myInRange.length, refTotal: refInRange.length, myTop, refTop, biggestDiff };
 }
 
-function findPreGapPatterns(snapshots: CastSnapshot[]): PatternAnalysis["preGapPatterns"] {
-  const patterns: PatternAnalysis["preGapPatterns"] = [];
-  for (let i = 1; i < snapshots.length; i++) {
-    const gap = snapshots[i].timestamp - snapshots[i - 1].timestamp;
-    if (gap >= GAP_THRESHOLD) {
-      const start = Math.max(0, i - 3);
-      patterns.push({ gapStart: snapshots[i - 1].timestamp, gapDuration: gap, lastCasts: snapshots.slice(start, i) });
-    }
-  }
-  return patterns;
-}
-
 function generateInsights(
-  preGaps: PatternAnalysis["preGapPatterns"],
   metaUsage: PatternAnalysis["metaUsage"],
 ): PatternAnalysis["insights"] {
   const insights: PatternAnalysis["insights"] = [];
@@ -218,12 +195,6 @@ function generateInsights(
   if (metaUsage.myCount > 0 || metaUsage.refCount > 0) {
     insights.push({ priority: "medium", category: "탈태",
       message: `${metaUsage.myCount}회 vs ${metaUsage.refCount}회 | 탈태당 캐스트 ${metaUsage.myAvgCasts} vs ${metaUsage.refAvgCasts}` });
-  }
-
-  // 빈 시간
-  if (preGaps.length > 0) {
-    insights.push({ priority: preGaps.length > 3 ? "high" : "low", category: "빈 시간",
-      message: `2초+ 빈 구간 ${preGaps.length}회` });
   }
 
   const order = { high: 0, medium: 1, low: 2 };

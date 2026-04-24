@@ -844,7 +844,7 @@ function AnalysisView({ analysis, spellMeta, cColor, activeTab, setActiveTab,
       {/* 탭 — 모바일에선 가로 스크롤, sm 이상에선 균등 분할 */}
       <div className="flex gap-1 p-1 rounded overflow-x-auto" style={{ background: "#131320" }}>
         {[
-          ["summary", "개선 제안"],
+          ["summary", "종합"],
           ["gear", "장비 비교"],
           ["patterns", "습관 분석"],
           ["timeline", "캐스트 타임라인"],
@@ -875,13 +875,13 @@ function AnalysisView({ analysis, spellMeta, cColor, activeTab, setActiveTab,
 }
 
 // ============================================
-// 탭: 개선 제안
+// 탭: 종합
 // ============================================
 
 function SuggestionsTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMeta: Record<number, SpellMeta> }) {
   const categoryColors: Record<string, string> = {
     DPS: "#ef4444", 장비: "#3b82f6", 스탯: "#f59e0b", 가동률: "#22d3ee",
-    탈태: "#c084fc", "빈 시간": "#f87171",
+    탈태: "#c084fc",
   };
   const s = analysis.suggestions;
 
