@@ -1678,7 +1678,7 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
           {selectedIds.size > 0 && (
             <button onClick={() => { setSelectedIds(new Set()); setHideUnselected(false); }}
               className="text-[11px] px-2 py-1 rounded text-gray-400 hover:text-white hover:bg-[#1c1c30] transition">
-              초기화 ({selectedIds.size})
+              선택해제 ({selectedIds.size})
             </button>
           )}
           {/* 현재 시간 범위 — 보라 강조로 가독성 ↑ */}
@@ -1738,9 +1738,12 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
             .map(([name, { spellId, casts: groupCasts }]) => [spellId, groupCasts, name] as [number, CastSnapshot[], string]);
 
           // 오라: "선택만 보기" ON이면 선택된 것만, 아니면 전부
-          // <98 필터만으로 의미있는 버프만 남음 (100% 상시 패시브 제외)
+          // <98 필터: 상시 패시브(MotW 등) 제외
+          // 시전 목록에 있는 spellId는 오라에서 제외 — 같은 스킬이 시전/오라 양쪽에 중복되지 않도록
+          const castSpellIds = new Set(sortedSpells.map(([id]) => id));
           const visibleAuras = auras
             .filter(a => a.uptimePercent < 98)
+            .filter(a => !castSpellIds.has(a.spellId))
             .filter(a => !hideUnselected || selectedIds.size === 0 || selectedIds.has(a.spellId));
           const visibleSpells = sortedSpells
             .filter(([spellId]) => !hideUnselected || selectedIds.size === 0 || selectedIds.has(spellId));
