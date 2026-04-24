@@ -1677,7 +1677,8 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
           </button>
           {selectedIds.size > 0 && (
             <button onClick={() => { setSelectedIds(new Set()); setHideUnselected(false); }}
-              className="text-[11px] px-2 py-1 rounded text-gray-400 hover:text-white hover:bg-[#1c1c30] transition">
+              className="text-[11px] px-3 py-1 rounded font-semibold transition hover:brightness-125"
+              style={{ background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}>
               선택해제 ({selectedIds.size})
             </button>
           )}
