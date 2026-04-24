@@ -1576,6 +1576,8 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       const target = e.target as HTMLElement;
       // 입력 컨트롤 위에선 드래그 시작 안 함. a/img는 threshold로 click 분리.
       if (target.closest("button, select, input, textarea")) return;
+      // 기본 텍스트 셀렉션 차단 — 이게 없으면 드래그가 문자열 selection으로 하이재킹됨
+      e.preventDefault();
       mouseDownActive = true;
       dragExceeded = false;
       mouseDownStartX = e.clientX;
@@ -1583,16 +1585,22 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       document.addEventListener("mousemove", mouseMove);
       document.addEventListener("mouseup", mouseUp);
     };
+    // 이미지 드래그(ghost image) 차단 — 스펠 아이콘이 드래그돼서 끊김
+    const dragStart = (e: DragEvent) => e.preventDefault();
     el.addEventListener("wheel", wheelHandler, { passive: false });
     el.addEventListener("touchstart", touchStart, { passive: true });
     el.addEventListener("touchmove", touchMove, { passive: false });
     el.addEventListener("mousedown", mouseDown);
+    el.addEventListener("dragstart", dragStart);
     el.style.cursor = "grab";
+    el.style.userSelect = "none";
+    (el.style as CSSStyleDeclaration & { webkitUserSelect?: string }).webkitUserSelect = "none";
     return () => {
       el.removeEventListener("wheel", wheelHandler);
       el.removeEventListener("touchstart", touchStart);
       el.removeEventListener("touchmove", touchMove);
       el.removeEventListener("mousedown", mouseDown);
+      el.removeEventListener("dragstart", dragStart);
       document.removeEventListener("mousemove", mouseMove);
       document.removeEventListener("mouseup", mouseUp);
       if (rafId !== null) cancelAnimationFrame(rafId);
