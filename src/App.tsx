@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useSyncExternalStore, Fragment } from "react";
 import { isAuthenticated, startAuth, handleCallback, logout, registerLogoutHook } from "./engine/wcl/auth";
 import { clearAllCaches, WCLApiError } from "./engine/wcl/api";
-import { subscribeRateLimit, getRateLimitSnapshot } from "./engine/wcl/rateLimit";
+import { subscribeRateLimit, getRateLimitSnapshot, clearRateLimit } from "./engine/wcl/rateLimit";
 import {
   getMyCharacters, searchCharacter, getReportInfo, getEncounterRankings, getFightPlayerIds, getMyEncounterRankings,
   CLASS_NAMES_KR, CLASS_COLORS, DIFFICULTY_NAMES, DIFFICULTY_COLORS,
@@ -83,6 +83,7 @@ function App() {
     registerLogoutHook(() => {
       clearAllCaches();
       rankingsCache.current.clear();
+      clearRateLimit(); // 토큰 변경 시 이전 유저의 rate limit 상태 숨김
     });
   }, []);
 
@@ -112,6 +113,7 @@ function App() {
   }, [authed, step, myChars.length]);
 
   async function selectChar(char: MyCharacter) {
+    if (loading) return; // 중복 클릭 차단 — 쿼리 폭주 방지
     setLoading(true); setError(null);
     try {
       const data = await searchCharacter(char.name, char.serverSlug, char.region);
@@ -192,6 +194,7 @@ function App() {
 
   async function selectBossRanking(encounterID: number, encounterName: string, difficulty: number) {
     if (!selectedChar) return;
+    if (loading) return; // 중복 클릭 차단
     setSelectedFight({ id: 0, name: encounterName, startTime: 0, endTime: 0, kill: true, difficulty, encounterID, friendlyPlayers: [] });
     setStatScan(null); setLoading(true); setError(null);
     try {
@@ -215,6 +218,7 @@ function App() {
   /** 내 킬 기록 선택 후 → 랭킹 목록 */
   async function selectMyKill(kill: { reportCode: string; fightID: number; amount: number; startTime: number; duration: number }) {
     if (!selectedFight || !selectedChar) return;
+    if (loading) return; // 중복 클릭 차단
     setStatScan(null); setLoading(true); setError(null);
     try {
       // 선택한 킬의 리포트와 전투 정보 로드
@@ -245,6 +249,7 @@ function App() {
 
   async function doAnalysis(ranking: WCLRanking) {
     if (!selectedFight || !selectedChar) return;
+    if (loading) return; // 중복 클릭 차단 — 분석은 30+ 쿼리 터지므로 반드시 필요
     setRefSpec(ranking.spec ?? "");
     setStatScan(null);
     setLoading(true); setLoadingMsg("리포트 로딩..."); setError(null);
@@ -2890,7 +2895,17 @@ function errorMessage(e: unknown): string {
     if (e.status === 0) return `WarcraftLogs 쿼리 오류: ${e.message}`;
     if (e.status === 401) return "로그인이 만료됐어요. 다시 로그인해주세요.";
     if (e.status === 403) return "접근 권한이 없어요. (비공개 리포트일 수 있음)";
-    if (e.status === 429) return "WarcraftLogs API 한도를 초과했어요. 잠시 후 다시 시도해주세요.";
+    if (e.status === 429) {
+      // 마지막으로 관찰된 rate limit에서 "몇 분 후 초기화" 계산
+      const snap = getRateLimitSnapshot();
+      if (snap) {
+        const elapsed = (Date.now() - snap.observedAt) / 1000;
+        const remainingSec = Math.max(0, snap.pointsResetIn - elapsed);
+        const minutesLeft = Math.max(1, Math.ceil(remainingSec / 60));
+        return `WarcraftLogs API 한도를 초과했어요. ${minutesLeft}분 후 초기화됩니다.`;
+      }
+      return "WarcraftLogs API 한도를 초과했어요. 최대 1시간 후 자동 초기화됩니다.";
+    }
     if (e.status >= 500 && e.status < 600) return "WarcraftLogs 서버 일시 오류. 잠시 후 다시 시도해주세요.";
     return e.message;
   }

@@ -322,7 +322,6 @@ export async function getCasts(
   void _fightId;
   const allEvents: WCLCastEvent[] = [];
   let currentStart: number = startTime;
-  let prevStart = -1;
   const MAX_PAGES = 30;
 
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -359,8 +358,7 @@ export async function getCasts(
       });
     }
     const next = events.nextPageTimestamp ?? 0;
-    if (next <= 0 || next <= prevStart) break;
-    prevStart = currentStart;
+    if (next <= 0 || next <= currentStart) break;
     currentStart = next;
   }
 
@@ -475,7 +473,6 @@ export async function getExternalBuffEvents(
   const allEvents: any[] = [];
   let currentStart = startTime;
   // 페이지네이션 진행 감시 — nextPageTimestamp가 진행 안 하거나 역행하면 무한 루프 방지.
-  let prevStart = -1;
   const MAX_PAGES = 20;
   for (let page = 0; page < MAX_PAGES; page++) {
     const data: any = await query<any>(`
@@ -508,8 +505,7 @@ export async function getExternalBuffEvents(
     if (!events) break;
     allEvents.push(...(events.data ?? []));
     const next = events.nextPageTimestamp ?? 0;
-    if (next <= 0 || next <= prevStart) break;
-    prevStart = currentStart;
+    if (next <= 0 || next <= currentStart) break;
     currentStart = next;
   }
 
@@ -582,7 +578,6 @@ export async function getIncomingCasts(
 
   const allEvents: any[] = [];
   let currentStart = startTime;
-  let prevStart = -1;
   const MAX_PAGES = 20;
   for (let page = 0; page < MAX_PAGES; page++) {
     const data: any = await query<any>(`
@@ -615,8 +610,7 @@ export async function getIncomingCasts(
     if (!events) break;
     allEvents.push(...(events.data ?? []));
     const next = events.nextPageTimestamp ?? 0;
-    if (next <= 0 || next <= prevStart) break;
-    prevStart = currentStart;
+    if (next <= 0 || next <= currentStart) break;
     currentStart = next;
   }
 
@@ -648,7 +642,6 @@ export async function getBuffs(
   void _fightId;
   const allEvents: WCLBuffEvent[] = [];
   let currentStart: number = startTime;
-  let prevStart = -1;
   const MAX_PAGES = 30;
 
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -680,8 +673,7 @@ export async function getBuffs(
     const events: any = data.reportData.report.events;
     allEvents.push(...events.data);
     const next = events.nextPageTimestamp ?? 0;
-    if (next <= 0 || next <= prevStart) break;
-    prevStart = currentStart;
+    if (next <= 0 || next <= currentStart) break;
     currentStart = next;
   }
 
@@ -699,7 +691,6 @@ export async function getResources(
   void _fightId;
   const allEvents: WCLResourceEvent[] = [];
   let currentStart: number = startTime;
-  let prevStart = -1;
   const MAX_PAGES = 30;
 
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -745,8 +736,7 @@ export async function getResources(
     }
 
     const next = events.nextPageTimestamp ?? 0;
-    if (next <= 0 || next <= prevStart) break;
-    prevStart = currentStart;
+    if (next <= 0 || next <= currentStart) break;
     currentStart = next;
   }
 
@@ -1167,7 +1157,6 @@ export async function getDamageDone(
 ): Promise<WCLDamageEvent[]> {
   const allEvents: WCLDamageEvent[] = [];
   let currentStart = startTime;
-  let prevStart = -1;
   const MAX_PAGES = 30;
 
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -1198,8 +1187,7 @@ export async function getDamageDone(
     const events = data.reportData.report.events;
     allEvents.push(...events.data);
     const next = events.nextPageTimestamp ?? 0;
-    if (next <= 0 || next <= prevStart) break;
-    prevStart = currentStart;
+    if (next <= 0 || next <= currentStart) break;
     currentStart = next;
   }
 
@@ -1215,7 +1203,6 @@ export async function getHealingDone(
 ): Promise<WCLHealEvent[]> {
   const allEvents: WCLHealEvent[] = [];
   let currentStart = startTime;
-  let prevStart = -1;
   const MAX_PAGES = 30;
 
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -1259,8 +1246,7 @@ export async function getHealingDone(
       });
     }
     const next = events.nextPageTimestamp ?? 0;
-    if (next <= 0 || next <= prevStart) break;
-    prevStart = currentStart;
+    if (next <= 0 || next <= currentStart) break;
     currentStart = next;
   }
 
