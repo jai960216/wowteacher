@@ -1527,8 +1527,8 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       if (e.touches.length !== 1) return;
       const curX = e.touches[0].clientX;
       const dx = touchPrevX - curX;
+      if (dx === 0) return;
       touchPrevX = curX;
-      if (Math.abs(dx) < 1) return;
       e.preventDefault();
       const width = el.clientWidth || 1;
       queueDelta((dx / width) * rangeLen);
@@ -1548,10 +1548,12 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
         el.style.cursor = "grabbing";
       }
       const dx = mouseDownPrevX - curX;
+      if (dx === 0) return;
       mouseDownPrevX = curX;
-      if (Math.abs(dx) < 1) return;
       const width = el.clientWidth || 1;
       // 감도 3배 — 1:1이면 체감이 너무 느려 "고정된" 느낌을 줌
+      // dx < 1 guard 절대 금지 — 천천히 드래그하면 프레임당 dx<1이 되는데
+      // prevX를 먼저 갱신해버려서 sub-pixel 움직임이 영원히 유실됨
       queueDelta((dx / width) * rangeLen * 3);
     };
     const mouseUp = () => {
