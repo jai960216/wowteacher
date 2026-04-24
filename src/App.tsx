@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useSyncExternalStore, Fragment } from "react";
 import { isAuthenticated, startAuth, handleCallback, logout, registerLogoutHook } from "./engine/wcl/auth";
 import { clearAllCaches, WCLApiError } from "./engine/wcl/api";
+import { PersistCache } from "./engine/wcl/persistCache";
 import { subscribeRateLimit, getRateLimitSnapshot } from "./engine/wcl/rateLimit";
 import {
   getMyCharacters, searchCharacter, getReportInfo, getEncounterRankings, getFightPlayerIds, getMyEncounterRankings,
@@ -74,9 +75,11 @@ function App() {
   const [myKills, setMyKills] = useState<Array<{ reportCode: string; fightID: number; amount: number; startTime: number; duration: number }>>([]);
   const [statScanProgress, setStatScanProgress] = useState("");
   const callbackHandled = useRef(false);
-  // (encounterID, className, difficulty, perSpec) 조합별 랭킹 inflight/결과 캐시.
+  // (encounterID, className, difficulty, perSpec, metric) 조합별 랭킹 inflight/결과 캐시.
   // selectFight/selectBossRanking/selectMyKill이 같은 조합을 중복 호출하는 걸 방지.
   const rankingsCache = useRef(new Map<string, Promise<WCLRanking[]>>());
+  // 랭킹은 WCL이 수시간 주기로 갱신되므로 TTL 2시간. 새로고침해도 복구됨.
+  const rankingsPersist = useRef(new PersistCache<WCLRanking[]>("rankings", 2 * 60 * 60 * 1000));
 
   // 로그아웃 시 세션 캐시 전체 클리어 — 계정 전환 시 이전 유저 데이터 노출 방지.
   // rate limit snapshot은 유지: 같은 계정 재로그인이 대부분이라 quota 정보가 유지돼야
@@ -161,6 +164,9 @@ function App() {
     const key = `${encounterID}:${className}:${difficulty}:${perSpec}:${rankingMetric}`;
     const cached = rankingsCache.current.get(key);
     if (cached) return cached;
+    // localStorage 히트 — 새로고침·세션 넘어서도 2시간 유지
+    const persisted = rankingsPersist.current.get(key);
+    if (persisted) return Promise.resolve(persisted);
 
     const promise = (async (): Promise<WCLRanking[]> => {
       const specs = ALL_SPECS[className];
@@ -189,6 +195,7 @@ function App() {
     })();
 
     rankingsCache.current.set(key, promise);
+    promise.then(v => rankingsPersist.current.set(key, v));
     promise.catch(() => rankingsCache.current.delete(key));
     return promise;
   }

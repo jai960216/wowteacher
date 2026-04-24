@@ -9,7 +9,14 @@
 import { getToken } from "./auth";
 import { setRateLimitData, getRateLimitSnapshot } from "./rateLimit";
 import { detectHeroTalent } from "../specs/heroTalents";
+import { PersistCache, clearAllPersistCaches } from "./persistCache";
 import { devLog } from "../../debug";
+
+// TTL: 리포트·combatantInfo는 킬 완료 후 불변 → 24시간. 파티션은 패치 단위 → 7일.
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
+const reportInfoPersist = new PersistCache<WCLReportInfo>("reportInfo", DAY);
+const partitionPersist = new PersistCache<number>("partition", 7 * DAY);
 // spec 필드는 항상 특성명 (Devourer, Fury 등). 영웅특성은 별도.
 
 const PUBLIC_API = "https://www.warcraftlogs.com/api/v2/client";
@@ -226,13 +233,21 @@ export function clearAllCaches(): void {
   reportInfoCache.clear();
   partitionCache.clear();
   combatantInfoCache.clear();
+  clearAllPersistCaches();
 }
 
 export async function getReportInfo(reportCode: string): Promise<WCLReportInfo> {
+  // 1) 메모리 inflight 병합
   const cached = reportInfoCache.get(reportCode);
   if (cached) return cached;
+  // 2) localStorage 히트 — 새로고침·세션 경계 넘어도 재사용
+  const persisted = reportInfoPersist.get(reportCode);
+  if (persisted) return Promise.resolve(persisted);
 
-  const promise = fetchReportInfo(reportCode);
+  const promise = fetchReportInfo(reportCode).then(v => {
+    reportInfoPersist.set(reportCode, v);
+    return v;
+  });
   reportInfoCache.set(reportCode, promise);
   promise.catch(() => reportInfoCache.delete(reportCode));
   return promise;
@@ -974,6 +989,9 @@ const PARTITION_FALLBACK = 1;
 export function getDefaultPartition(encounterId: number): Promise<number> {
   const cached = partitionCache.get(encounterId);
   if (cached) return cached;
+  // localStorage 히트 — 파티션은 패치 주기(수주~수개월) 안정적
+  const persisted = partitionPersist.get(String(encounterId));
+  if (persisted != null) return Promise.resolve(persisted);
 
   const promise = (async () => {
     try {
@@ -1009,7 +1027,8 @@ export function getDefaultPartition(encounterId: number): Promise<number> {
   })();
 
   partitionCache.set(encounterId, promise);
-  // 성공 응답도 캐싱 (catch는 안에서 처리되므로 promise 자체는 reject 안 함)
+  // fallback 값(1)은 localStorage에 저장하지 않음 — 다음 세션에서 재시도 가능하도록
+  promise.then(v => { if (v !== PARTITION_FALLBACK) partitionPersist.set(String(encounterId), v); });
   return promise;
 }
 
@@ -1383,6 +1402,7 @@ export async function getFightPlayerIds(
  * 여러 번 긁는 패턴을 방지.
  */
 const combatantInfoCache = new Map<string, Promise<WCLCombatantInfo[]>>();
+const combatantInfoPersist = new PersistCache<WCLCombatantInfo[]>("combatantInfo", DAY);
 
 export async function getCombatantInfo(
   reportCode: string,
@@ -1392,8 +1412,13 @@ export async function getCombatantInfo(
   const key = `${reportCode}:${startTime}:${endTime}`;
   const cached = combatantInfoCache.get(key);
   if (cached) return cached;
+  const persisted = combatantInfoPersist.get(key);
+  if (persisted) return Promise.resolve(persisted);
 
-  const promise = fetchCombatantInfo(reportCode, startTime, endTime);
+  const promise = fetchCombatantInfo(reportCode, startTime, endTime).then(v => {
+    combatantInfoPersist.set(key, v);
+    return v;
+  });
   combatantInfoCache.set(key, promise);
   promise.catch(() => combatantInfoCache.delete(key));
   return promise;
