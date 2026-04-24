@@ -895,8 +895,10 @@ export async function searchCharacter(
   metric: "dps" | "hps" = "dps",
 ): Promise<{ classID: number; className: string; allZoneRankings: ZoneRankingData[] }> {
   // 난이도별 zoneRankings를 GraphQL alias로 한번에 가져옴
+  // WCL 스키마: Character.zoneRankings는 CharacterPageRankingMetricType을 받음
+  // (Encounter.characterRankings의 CharacterRankingMetricType과 혼동 금지)
   const data: any = await query(`
-    query ($name: String!, $server: String!, $region: String!, $metric: CharacterRankingMetricType!) {
+    query ($name: String!, $server: String!, $region: String!, $metric: CharacterPageRankingMetricType!) {
       characterData {
         character(name: $name, serverSlug: $server, serverRegion: $region) {
           name
