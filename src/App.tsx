@@ -1490,8 +1490,15 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
   const duration = Math.max(analysis.fightDuration.my, analysis.fightDuration.ref);
   const rangeLen = scrollRange.end - scrollRange.start;
 
-  // 마우스 휠 + 터치 스와이프 + 마우스 드래그로 시간 스크롤.
-  // pointer events는 touch/click과 충돌 이슈 있어서 데스크탑=mouse, 모바일=touch로 이원화.
+  // 최신 rangeLen/duration을 ref로 보관 — effect가 rangeLen 변경으로 재실행되면
+  // 드래그 중인 pointerId 등 local state가 전부 리셋돼서 드래그 중단됨
+  const rangeLenRef = useRef(rangeLen);
+  const durationRef = useRef(duration);
+  rangeLenRef.current = rangeLen;
+  durationRef.current = duration;
+
+  // 마우스 휠 + 터치 스와이프 + 포인터 드래그로 시간 스크롤.
+  // deps는 비워둠 — 절대 재실행되면 안 됨. 최신값은 ref로 읽음.
   useEffect(() => {
     const el = chartRef.current;
     if (!el) return;
@@ -1504,9 +1511,10 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       pendingDelta = 0;
       if (delta === 0) return;
       setScrollRange(prev => {
-        const maxStart = Math.max(0, duration - rangeLen);
+        const rl = prev.end - prev.start; // 현재 rangeLen
+        const maxStart = Math.max(0, durationRef.current - rl);
         const newStart = Math.max(0, Math.min(maxStart, prev.start + delta));
-        return { start: newStart, end: newStart + rangeLen };
+        return { start: newStart, end: newStart + rl };
       });
     };
     const queueDelta = (deltaSec: number) => {
@@ -1515,7 +1523,7 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
     };
     const wheelHandler = (e: WheelEvent) => {
       e.preventDefault();
-      const step = rangeLen * 0.15;
+      const step = rangeLenRef.current * 0.15;
       queueDelta(e.deltaY > 0 ? step : -step);
     };
     // 터치 스와이프 (모바일)
@@ -1531,7 +1539,7 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       touchPrevX = curX;
       e.preventDefault();
       const width = el.clientWidth || 1;
-      queueDelta((dx / width) * rangeLen);
+      queueDelta((dx / width) * rangeLenRef.current);
     };
     // 포인터 이벤트 + setPointerCapture — 드래그 중 어떤 자식 요소로 이동해도 캡처 유지됨
     // 기존 mouse events는 <a>(스펠 아이콘)의 기본 link-drag이 mouseup을 가로채는 문제가 있었음
@@ -1565,7 +1573,7 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       if (dx === 0) return;
       pointerPrevX = curX;
       const width = el.clientWidth || 1;
-      queueDelta((dx / width) * rangeLen * 3);
+      queueDelta((dx / width) * rangeLenRef.current * 3);
     };
     const pointerUp = (e: PointerEvent) => {
       if (pointerId === null || e.pointerId !== pointerId) return;
@@ -1606,7 +1614,8 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       el.removeEventListener("dragstart", dragStart);
       if (rafId !== null) cancelAnimationFrame(rafId);
     };
-  }, [rangeLen, duration]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 시간 눈금
   const tickInterval = rangeLen <= 30 ? 5 : rangeLen <= 120 ? 10 : 30;
