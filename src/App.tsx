@@ -1760,8 +1760,6 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
 
               {/* 오라 바 */}
               {showAuras && visibleAuras.map(aura => {
-                const visibleWindows = aura.windows.filter(w => w.end >= scrollRange.start && w.start <= scrollRange.end);
-                if (visibleWindows.length === 0) return null;
                 const hue = (aura.spellId * 137) % 360;
                 const color = `hsl(${hue}, 60%, 55%)`;
                 const isSelected = auraFilter.has(aura.spellId);
@@ -1785,7 +1783,7 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
                       <span className="text-[8px] text-gray-700 ml-auto">{aura.uptimePercent}%</span>
                     </div>
                     <div className="relative flex-1" style={{ height: barH + 4 }}>
-                      {visibleWindows.map((w, wi) => {
+                      {aura.windows.map((w, wi) => {
                         const left = Math.max(0, toPercent(w.start));
                         const right = Math.min(100, toPercent(w.end));
                         const width = right - left;
