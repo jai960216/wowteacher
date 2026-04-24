@@ -1,5 +1,5 @@
 // ============================================
-// 패턴 분석 — 딜사이클, 자원별 습관, 시퀀스 비교
+// 패턴 분석 — 딜사이클, 자원별 습관
 // 탈태(메타) ON/OFF 상태별 분리 분석
 // ============================================
 
@@ -24,15 +24,6 @@ export interface ResourceHabit {
   } | null;
 }
 
-/** 스킬 시퀀스(N-gram) 비교 */
-export interface SequenceComparison {
-  length: number;
-  myTop: Array<{ seq: number[]; count: number; pct: number }>;
-  refTop: Array<{ seq: number[]; count: number; pct: number }>;
-  missingFromMe: Array<{ seq: number[]; refPct: number; myPct: number }>;
-  onlyMe: Array<{ seq: number[]; myPct: number; refPct: number }>;
-}
-
 /** 상태별(탈태 ON/OFF) 분석 블록 */
 export interface StateAnalysis {
   label: string;           // "일반" 또는 "탈태"
@@ -40,7 +31,6 @@ export interface StateAnalysis {
   myCasts: number;
   refCasts: number;
   resourceHabits: ResourceHabit[];
-  bigrams: SequenceComparison;
   /** 가장 많이 쓴 스킬 Top 10 */
   mySpellRanking: Array<{ spellId: number; count: number; pct: number }>;
   refSpellRanking: Array<{ spellId: number; count: number; pct: number }>;
@@ -129,7 +119,6 @@ function buildStateAnalysis(
   ranges: Array<{ label: string; min: number; max: number }>,
 ): StateAnalysis {
   const resourceHabits = ranges.map(r => buildResourceHabit(r.label, r.min, r.max, my, ref));
-  const bigrams = buildSequenceComparison(my, ref, 2);
 
   const mySpells = countSpells(my);
   const refSpells = countSpells(ref);
@@ -139,7 +128,6 @@ function buildStateAnalysis(
     myCasts: my.length,
     refCasts: ref.length,
     resourceHabits,
-    bigrams,
     mySpellRanking: topN(mySpells, my.length, 10),
     refSpellRanking: topN(refSpells, ref.length, 10),
   };
@@ -208,41 +196,6 @@ function buildResourceHabit(
   return { rangeLabel: label, rangeMin: min, rangeMax: max, myTotal: myInRange.length, refTotal: refInRange.length, myTop, refTop, biggestDiff };
 }
 
-function buildSequenceComparison(my: CastSnapshot[], ref: CastSnapshot[], n: number): SequenceComparison {
-  const mySeqs = extractNgrams(my, n);
-  const refSeqs = extractNgrams(ref, n);
-  const myTotal = Math.max(1, my.length - n + 1);
-  const refTotal = Math.max(1, ref.length - n + 1);
-
-  const myTop = topNSeqs(mySeqs, myTotal, 8);
-  const refTop = topNSeqs(refSeqs, refTotal, 8);
-
-  const missingFromMe: SequenceComparison["missingFromMe"] = [];
-  const onlyMe: SequenceComparison["onlyMe"] = [];
-
-  for (const [key, refCount] of refSeqs) {
-    const myCount = mySeqs.get(key) ?? 0;
-    const refPct = (refCount / refTotal) * 100;
-    const myPct = (myCount / myTotal) * 100;
-    if (refPct > 3 && refPct - myPct > 3) {
-      missingFromMe.push({ seq: key.split(",").map(Number), refPct: round(refPct), myPct: round(myPct) });
-    }
-  }
-  for (const [key, myCount] of mySeqs) {
-    const refCount = refSeqs.get(key) ?? 0;
-    const myPct = (myCount / myTotal) * 100;
-    const refPct = (refCount / refTotal) * 100;
-    if (myPct > 3 && myPct - refPct > 3) {
-      onlyMe.push({ seq: key.split(",").map(Number), myPct: round(myPct), refPct: round(refPct) });
-    }
-  }
-
-  missingFromMe.sort((a, b) => (b.refPct - b.myPct) - (a.refPct - a.myPct));
-  onlyMe.sort((a, b) => (b.myPct - b.refPct) - (a.myPct - a.refPct));
-
-  return { length: n, myTop, refTop, missingFromMe: missingFromMe.slice(0, 5), onlyMe: onlyMe.slice(0, 5) };
-}
-
 function findPreGapPatterns(snapshots: CastSnapshot[]): PatternAnalysis["preGapPatterns"] {
   const patterns: PatternAnalysis["preGapPatterns"] = [];
   for (let i = 1; i < snapshots.length; i++) {
@@ -289,20 +242,6 @@ function countSpells(casts: CastSnapshot[]): Map<number, number> {
 function topN(counts: Map<number, number>, total: number, n: number) {
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, n)
     .map(([spellId, count]) => ({ spellId, count, pct: round(total > 0 ? (count / total) * 100 : 0) }));
-}
-
-function extractNgrams(casts: CastSnapshot[], n: number): Map<string, number> {
-  const m = new Map<string, number>();
-  for (let i = 0; i <= casts.length - n; i++) {
-    const key = casts.slice(i, i + n).map(c => c.spellId).join(",");
-    m.set(key, (m.get(key) ?? 0) + 1);
-  }
-  return m;
-}
-
-function topNSeqs(counts: Map<string, number>, total: number, n: number) {
-  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, n)
-    .map(([key, count]) => ({ seq: key.split(",").map(Number), count, pct: round(total > 0 ? (count / total) * 100 : 0) }));
 }
 
 function round(n: number): number { return Math.round(n * 10) / 10; }

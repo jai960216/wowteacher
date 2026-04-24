@@ -1553,21 +1553,22 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       if (e.button !== 0) return;
       const target = e.target as HTMLElement;
       if (target.closest("button, select, input, textarea")) return;
-      e.preventDefault();
+      // preventDefault와 setPointerCapture는 threshold 넘었을 때만 — 짧은 클릭은
+      // 자식(오라 바 등)의 onClick으로 흘러가야 함
       pointerId = e.pointerId;
       dragExceeded = false;
       pointerStartX = e.clientX;
       pointerPrevX = e.clientX;
-      // 캡처 — 이후 pointermove/up이 어떤 자식 위에 있든 el로 옴
-      el.setPointerCapture(e.pointerId);
     };
     const pointerMove = (e: PointerEvent) => {
       if (pointerId === null || e.pointerId !== pointerId) return;
       const curX = e.clientX;
       if (!dragExceeded) {
         if (Math.abs(curX - pointerStartX) < DRAG_THRESHOLD) return;
+        // 여기서부터 드래그 — 이 시점에 pointer capture해야 자식 요소 위에서도 move/up이 el로 옴
         dragExceeded = true;
         el.style.cursor = "grabbing";
+        try { el.setPointerCapture(e.pointerId); } catch { /* 브라우저 거부 시 무시 */ }
       }
       const dx = pointerPrevX - curX;
       if (dx === 0) return;
@@ -2698,82 +2699,10 @@ function PatternsTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
               ))}
             </div>
 
-            {/* 2연속 시퀀스 */}
-            <div className="grid grid-cols-2 gap-4">
-              {[{ label: "나", top: state.bigrams.myTop },
-                { label: "상대", top: state.bigrams.refTop }].map(({ label, top }) => (
-                <div key={label}>
-                  <div className="text-[10px] text-gray-600 mb-1">{label} 자주 쓰는 조합</div>
-                  {top.slice(0, 5).map((s, i) => (
-                    <div key={i} className="flex items-center gap-1 mb-0.5">
-                      <SeqIcons seq={s.seq} spellMeta={spellMeta} />
-                      <span className="text-[10px] text-gray-400 ml-auto">{s.pct}%</span>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-
-            {/* 시퀀스 차이 */}
-            {(state.bigrams.missingFromMe.length > 0 || state.bigrams.onlyMe.length > 0) && (
-              <div className="mt-3 pt-3" style={{ borderTop: "1px solid #1c1c30" }}>
-                {state.bigrams.missingFromMe.map((s, i) => (
-                  <div key={`m${i}`} className="flex items-center gap-2 mb-1">
-                    <span className="text-[9px] px-1 py-0.5 rounded" style={{ color: "#ef4444", background: "#ef444420" }}>부족</span>
-                    <SeqIcons seq={s.seq} spellMeta={spellMeta} />
-                    <span className="text-[10px] text-gray-500">상대 {s.refPct}% / 나 {s.myPct}%</span>
-                  </div>
-                ))}
-                {state.bigrams.onlyMe.map((s, i) => (
-                  <div key={`o${i}`} className="flex items-center gap-2 mb-1">
-                    <span className="text-[9px] px-1 py-0.5 rounded" style={{ color: "#f59e0b", background: "#f59e0b20" }}>과다</span>
-                    <SeqIcons seq={s.seq} spellMeta={spellMeta} />
-                    <span className="text-[10px] text-gray-500">나 {s.myPct}% / 상대 {s.refPct}%</span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )
       ))}
 
-      {/* 빈 시간 패턴 */}
-      {p.preGapPatterns.length > 0 && (
-        <div className="wcl-card p-4">
-          <h3 className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">빈 GCD 직전 패턴 ({p.preGapPatterns.length}회)</h3>
-          <div className="space-y-2">
-            {p.preGapPatterns.slice(0, 8).map((g, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span className="text-[10px] text-gray-600 font-mono w-14">{g.gapStart.toFixed(1)}s</span>
-                <div className="flex gap-0.5">
-                  {g.lastCasts.map((c, j) => {
-                    const s = spell(c.spellId);
-                    return s.icon ? <img key={j} src={s.icon} alt="" className="spell-icon" style={{ width: 18, height: 18 }} title={s.name} /> : <div key={j} className="w-[18px] h-[18px] rounded bg-gray-800" />;
-                  })}
-                </div>
-                <span className="text-[10px] font-mono" style={{ color: "#ef4444" }}>{g.gapDuration.toFixed(1)}s 빈 시간</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SeqIcons({ seq, spellMeta }: { seq: number[]; spellMeta: Record<number, SpellMeta> }) {
-  return (
-    <div className="flex items-center gap-0.5">
-      {seq.map((id, i) => {
-        const m = spellMeta[id];
-        const icon = m?.iconUrl || "";
-        return (
-          <div key={i} className="flex items-center">
-            {icon ? <img src={icon} alt="" className="spell-icon" style={{ width: 18, height: 18 }} title={m?.localName || m?.name || ""} /> : <div className="w-[18px] h-[18px] rounded bg-gray-800" />}
-            {i < seq.length - 1 && <span className="text-[8px] text-gray-700 mx-0.5">&rarr;</span>}
-          </div>
-        );
-      })}
     </div>
   );
 }
