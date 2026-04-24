@@ -1739,13 +1739,10 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
             .map(([name, { spellId, casts: groupCasts }]) => [spellId, groupCasts, name] as [number, CastSnapshot[], string]);
 
           // 오라: "선택만 보기" ON이면 선택된 것만, 아니면 전부
-          // <98 필터는 상시 패시브(MotW 등) 제외 목적 — 유지형 버프는 보통 95% 미만
-          // slice 20 → 40: 상위 랭커는 non-100% 버프(talent procs/트링킷/세트/인챈트)가 많아
-          // Eradicate 같은 의미있는 버프가 20위 밖으로 밀리는 경우 존재
+          // <98 필터만으로 의미있는 버프만 남음 (100% 상시 패시브 제외)
           const visibleAuras = auras
             .filter(a => a.uptimePercent < 98)
-            .filter(a => !auraHideUnselected || auraFilter.size === 0 || auraFilter.has(a.spellId))
-            .slice(0, 40);
+            .filter(a => !auraHideUnselected || auraFilter.size === 0 || auraFilter.has(a.spellId));
 
           return (
             <div key={who} className="wcl-card rounded overflow-hidden">
