@@ -7,7 +7,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { getToken } from "./auth";
-import { setRateLimitData } from "./rateLimit";
+import { setRateLimitData, getRateLimitSnapshot } from "./rateLimit";
 import { detectHeroTalent } from "../specs/heroTalents";
 import { devLog } from "../../debug";
 // spec 필드는 항상 특성명 (Devourer, Fury 등). 영웅특성은 별도.
@@ -60,7 +60,15 @@ async function query<T>(gql: string, variables: Record<string, any> = {}, useUse
     body: JSON.stringify({ query: injectRateLimitField(gql), variables }),
   });
 
-  if (!res.ok) throw new WCLApiError(res.status, `WarcraftLogs API error: ${res.status}`);
+  if (!res.ok) {
+    // 429: snapshot 없으면 synthetic으로 세팅 — 유저가 최소한 "몇 분 후" 카운트다운은 볼 수 있게.
+    // 실제 성공 쿼리가 돌면 진짜 값으로 덮어씀. WCL이 Retry-After 헤더를 주면 그 값 사용.
+    if (res.status === 429 && !getRateLimitSnapshot()) {
+      const retryAfterSec = Number(res.headers.get("retry-after")) || 3600; // 헤더 없으면 worst case 1h
+      setRateLimitData({ limitPerHour: 18000, pointsSpentThisHour: 18000, pointsResetIn: retryAfterSec });
+    }
+    throw new WCLApiError(res.status, `WarcraftLogs API error: ${res.status}`);
+  }
 
   const json = await res.json();
   // GraphQL 에러 — HTTP는 200이지만 응답에 errors 있음. status 0으로 구분해 errorMessage에서 감싼 메시지 노출.

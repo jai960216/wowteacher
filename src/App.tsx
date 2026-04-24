@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useSyncExternalStore, Fragment } from "react";
 import { isAuthenticated, startAuth, handleCallback, logout, registerLogoutHook } from "./engine/wcl/auth";
 import { clearAllCaches, WCLApiError } from "./engine/wcl/api";
-import { subscribeRateLimit, getRateLimitSnapshot, clearRateLimit } from "./engine/wcl/rateLimit";
+import { subscribeRateLimit, getRateLimitSnapshot } from "./engine/wcl/rateLimit";
 import {
   getMyCharacters, searchCharacter, getReportInfo, getEncounterRankings, getFightPlayerIds, getMyEncounterRankings,
   CLASS_NAMES_KR, CLASS_COLORS, DIFFICULTY_NAMES, DIFFICULTY_COLORS,
@@ -79,11 +79,12 @@ function App() {
   const rankingsCache = useRef(new Map<string, Promise<WCLRanking[]>>());
 
   // 로그아웃 시 세션 캐시 전체 클리어 — 계정 전환 시 이전 유저 데이터 노출 방지.
+  // rate limit snapshot은 유지: 같은 계정 재로그인이 대부분이라 quota 정보가 유지돼야
+  // "몇 분 후 초기화" 카운트다운이 이어짐. 새 계정으로 바뀌면 첫 쿼리가 바로 덮어씀.
   useEffect(() => {
     registerLogoutHook(() => {
       clearAllCaches();
       rankingsCache.current.clear();
-      clearRateLimit(); // 토큰 변경 시 이전 유저의 rate limit 상태 숨김
     });
   }, []);
 
