@@ -1817,8 +1817,6 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
               {sortedSpells.map(([spellId, spellCasts, groupName]) => {
                 const meta = spellMeta[spellId];
                 const icon = meta?.iconUrl || "";
-                const vis = spellCasts.filter(c => c.timestamp >= scrollRange.start && c.timestamp <= scrollRange.end);
-                if (vis.length === 0) return null;
 
                 return (
                   <div key={groupName} className="flex items-center" style={{ borderBottom: "1px solid #16162a", minHeight: 28 }}>
@@ -1828,7 +1826,7 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
                       <span className="text-[9px] text-gray-600">{spellCasts.length}</span>
                     </div>
                     <div className="relative flex-1 h-7">
-                      {vis.map((c, i) => {
+                      {spellCasts.map((c, i) => {
                         const pct = toPercent(c.timestamp);
                         if (pct < 0 || pct > 100) return null;
                         return (
