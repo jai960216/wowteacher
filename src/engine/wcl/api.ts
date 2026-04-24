@@ -17,6 +17,22 @@ const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 const reportInfoPersist = new PersistCache<WCLReportInfo>("reportInfo", DAY);
 const partitionPersist = new PersistCache<number>("partition", 7 * DAY);
+
+// 서버 공유 캐시 — VITE_USE_SHARED_CACHE=true일 때 공개 쿼리는 /api/* 경유
+const USE_SHARED_CACHE = import.meta.env.VITE_USE_SHARED_CACHE === "true";
+const API_BASE = import.meta.env.VITE_API_BASE || ""; // 프로덕션은 same-origin
+
+async function fetchSharedCache<T>(path: string, params: Record<string, string | number>): Promise<T | null> {
+  try {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) qs.set(k, String(v));
+    const res = await fetch(`${API_BASE}/api/wcl/${path}?${qs}`, { credentials: "omit" });
+    if (!res.ok) return null; // 실패 시 직접 WCL fallback
+    return await res.json() as T;
+  } catch {
+    return null;
+  }
+}
 // spec 필드는 항상 특성명 (Devourer, Fury 등). 영웅특성은 별도.
 
 const PUBLIC_API = "https://www.warcraftlogs.com/api/v2/client";
@@ -994,6 +1010,13 @@ export function getDefaultPartition(encounterId: number): Promise<number> {
   if (persisted != null) return Promise.resolve(persisted);
 
   const promise = (async () => {
+    // 서버 공유 캐시 우선
+    if (USE_SHARED_CACHE) {
+      const shared = await fetchSharedCache<{ partition: number }>("partition", { encounterId });
+      if (shared && typeof shared.partition === "number") {
+        return shared.partition;
+      }
+    }
     try {
       const data: any = await query<any>(`
         query ($id: Int!) {
@@ -1066,9 +1089,24 @@ export async function getEncounterRankings(
   if (difficulty > 0) vars.difficulty = difficulty;
   if (bracket > 0) vars.bracket = bracket;
 
+  // 서버 공유 캐시 우선 — 인기 조합은 WCL 쿼리 0번으로 반환
+  let data: any = null;
+  if (USE_SHARED_CACHE) {
+    data = await fetchSharedCache<any>("rankings", {
+      encounterId,
+      className: classNoSpace,
+      specName: specNoSpace,
+      difficulty: difficulty > 0 ? difficulty : 0,
+      page,
+      bracket,
+      partition,
+      metric,
+    });
+  }
+
   // includeCombatantInfo는 쿼리 포인트를 대폭 증가시킴 — 랭커의 영웅특성은
   // 실제 분석 시점에 getCombatantInfo로 받아서 쓰므로 여기선 필요 없음.
-  const data: any = await query(`
+  if (!data) data = await query(`
     query ($id: Int!, $class: String, $spec: String, $difficulty: Int, $page: Int, $bracket: Int, $partition: Int, $metric: CharacterRankingMetricType) {
       worldData {
         encounter(id: $id) {
