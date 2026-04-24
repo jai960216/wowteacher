@@ -1739,8 +1739,8 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
             .map(([name, { spellId, casts: groupCasts }]) => [spellId, groupCasts, name] as [number, CastSnapshot[], string]);
 
           // 오라: "선택만 보기" ON이면 선택된 것만, 아니면 전부
+          // uptime 필터는 제거 — 100%에 가까운 유지형 버프(예: Eradicate)가 숨겨지던 문제
           const visibleAuras = auras
-            .filter(a => a.uptimePercent < 98)
             .filter(a => !auraHideUnselected || auraFilter.size === 0 || auraFilter.has(a.spellId))
             .slice(0, 20);
 
@@ -1873,7 +1873,12 @@ function CooldownsTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMe
   const fightDuration = Math.max(analysis.fightDuration.my, analysis.fightDuration.ref);
 
   // 모든 스킬 수집: 캐스트 + 오라
-  const allSkills: Array<{ spellId: number; type: "cast" | "aura"; myCount: number; refCount: number }> = [];
+  // cast: myCount/refCount = 시전 횟수 / aura: myUptime/refUptime = 가동 시간(초)
+  const allSkills: Array<{
+    spellId: number; type: "cast" | "aura";
+    myCount: number; refCount: number;
+    myUptime: number; refUptime: number;
+  }> = [];
   const seen = new Set<number>();
 
   // 캐스트 스킬
@@ -1885,7 +1890,11 @@ function CooldownsTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMe
   }
   const allCastIds = new Set([...myCastCounts.keys(), ...refCastCounts.keys()]);
   for (const id of allCastIds) {
-    allSkills.push({ spellId: id, type: "cast", myCount: myCastCounts.get(id) ?? 0, refCount: refCastCounts.get(id) ?? 0 });
+    allSkills.push({
+      spellId: id, type: "cast",
+      myCount: myCastCounts.get(id) ?? 0, refCount: refCastCounts.get(id) ?? 0,
+      myUptime: 0, refUptime: 0,
+    });
     seen.add(id);
   }
 
@@ -1896,11 +1905,19 @@ function CooldownsTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMe
     const myAura = analysis.myAuras.find(a => a.spellId === id);
     const refAura = analysis.refAuras.find(a => a.spellId === id);
     if ((myAura?.uptimePercent ?? 0) >= 98 && (refAura?.uptimePercent ?? 0) >= 98) continue; // 상시 패시브 제외
-    allSkills.push({ spellId: id, type: "aura", myCount: myAura?.windows.length ?? 0, refCount: refAura?.windows.length ?? 0 });
+    allSkills.push({
+      spellId: id, type: "aura",
+      myCount: 0, refCount: 0,
+      myUptime: myAura?.totalUptime ?? 0, refUptime: refAura?.totalUptime ?? 0,
+    });
   }
 
-  // 사용 횟수 내림차순
-  allSkills.sort((a, b) => (b.myCount + b.refCount) - (a.myCount + a.refCount));
+  // 정렬: cast는 시전 횟수, aura는 가동 시간 기준 내림차순
+  allSkills.sort((a, b) => {
+    const aScore = a.type === "cast" ? a.myCount + a.refCount : a.myUptime + a.refUptime;
+    const bScore = b.type === "cast" ? b.myCount + b.refCount : b.myUptime + b.refUptime;
+    return bScore - aScore;
+  });
 
   // 선택된 스킬 상세
   const sel = selectedSpell;
@@ -1948,7 +1965,11 @@ function CooldownsTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMe
                     style={{ background: isActive ? "#1c1c30" : undefined, border: isActive ? "1px solid #2a2a40" : "1px solid transparent" }}>
                     {icon ? <img src={icon} alt="" className="spell-icon" style={{ width: 18, height: 18 }} /> : <div className="w-[18px] h-[18px] rounded bg-gray-800 flex-shrink-0" />}
                     <span className={`text-[10px] truncate flex-1 ${isActive ? "text-white" : "text-gray-400"}`}>{name}</span>
-                    <span className="text-[9px] text-gray-600 flex-shrink-0">{s.myCount}/{s.refCount}</span>
+                    <span className="text-[9px] text-gray-600 flex-shrink-0">
+                      {s.type === "cast"
+                        ? `${s.myCount}/${s.refCount}`
+                        : `${Math.round(s.myUptime)}s/${Math.round(s.refUptime)}s`}
+                    </span>
                   </button>
                 );
               })}
@@ -1970,20 +1991,36 @@ function CooldownsTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMe
                 <div className="text-sm text-white font-semibold">{selName}</div>
                 <div className="text-[10px] text-gray-600">ID: {sel}</div>
               </div>
-              <div className="ml-auto grid grid-cols-3 gap-4 text-center">
-                <div>
-                  <div className="text-sm font-bold" style={{ color: "#a78bfa" }}>{myTimings.length}회</div>
-                  <div className="text-[9px] text-gray-600">내 사용</div>
-                </div>
-                <div>
-                  <div className="text-sm font-bold" style={{ color: "#fbbf24" }}>{refTimings.length}회</div>
-                  <div className="text-[9px] text-gray-600">상대 사용</div>
-                </div>
-                {estimateCd(myTimings) > 0 && (
-                  <div>
-                    <div className="text-sm font-bold text-gray-300">~{estimateCd(myTimings)}초</div>
-                    <div className="text-[9px] text-gray-600">추정 쿨타임</div>
-                  </div>
+              <div className="ml-auto flex gap-4 text-center flex-wrap justify-end">
+                {(myTimings.length > 0 || refTimings.length > 0) && (
+                  <>
+                    <div>
+                      <div className="text-sm font-bold" style={{ color: "#a78bfa" }}>{myTimings.length}회</div>
+                      <div className="text-[9px] text-gray-600">내 사용</div>
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold" style={{ color: "#fbbf24" }}>{refTimings.length}회</div>
+                      <div className="text-[9px] text-gray-600">상대 사용</div>
+                    </div>
+                    {estimateCd(myTimings) > 0 && (
+                      <div>
+                        <div className="text-sm font-bold text-gray-300">~{estimateCd(myTimings)}초</div>
+                        <div className="text-[9px] text-gray-600">추정 쿨타임</div>
+                      </div>
+                    )}
+                  </>
+                )}
+                {(myAura || refAura) && (
+                  <>
+                    <div>
+                      <div className="text-sm font-bold" style={{ color: "#a78bfa" }}>{Math.round(myAura?.totalUptime ?? 0)}s</div>
+                      <div className="text-[9px] text-gray-600">내 가동 ({myAura?.uptimePercent ?? 0}%)</div>
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold" style={{ color: "#fbbf24" }}>{Math.round(refAura?.totalUptime ?? 0)}s</div>
+                      <div className="text-[9px] text-gray-600">상대 가동 ({refAura?.uptimePercent ?? 0}%)</div>
+                    </div>
+                  </>
                 )}
               </div>
             </div>
