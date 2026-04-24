@@ -1483,8 +1483,9 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
   // 현재 선택된 시간 범위 라벨 — 사용자가 버튼 클릭으로만 변경. 드래그로 안 바뀜.
   const [selectedRangeLabel, setSelectedRangeLabel] = useState<string>("60초");
   const [showAuras, setShowAuras] = useState(true);
-  const [auraFilter, setAuraFilter] = useState<Set<number>>(new Set());
-  const [auraHideUnselected, setAuraHideUnselected] = useState(false);
+  // 선택 필터 — 오라/스킬 공통. 클릭으로 id 토글, "선택만 보기"로 필터링
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [hideUnselected, setHideUnselected] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
 
   const duration = Math.max(analysis.fightDuration.my, analysis.fightDuration.ref);
@@ -1667,20 +1668,18 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
               : { background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}>
             오라 {showAuras ? "ON" : "OFF"}
           </button>
-          {auraFilter.size > 0 && (
-            <>
-              <button onClick={() => setAuraHideUnselected(!auraHideUnselected)}
-                className="text-[11px] px-3 py-1 rounded font-semibold transition hover:brightness-125"
-                style={auraHideUnselected
-                  ? { background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }
-                  : { background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}>
-                선택만 보기
-              </button>
-              <button onClick={() => { setAuraFilter(new Set()); setAuraHideUnselected(false); }}
-                className="text-[11px] px-2 py-1 rounded text-gray-400 hover:text-white hover:bg-[#1c1c30] transition">
-                초기화
-              </button>
-            </>
+          <button onClick={() => setHideUnselected(!hideUnselected)}
+            className="text-[11px] px-3 py-1 rounded font-semibold transition hover:brightness-125"
+            style={hideUnselected
+              ? { background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff" }
+              : { background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}>
+            선택만 보기
+          </button>
+          {selectedIds.size > 0 && (
+            <button onClick={() => { setSelectedIds(new Set()); setHideUnselected(false); }}
+              className="text-[11px] px-2 py-1 rounded text-gray-400 hover:text-white hover:bg-[#1c1c30] transition">
+              초기화 ({selectedIds.size})
+            </button>
           )}
           {/* 현재 시간 범위 — 보라 강조로 가독성 ↑ */}
           <span className="font-mono text-[11px] font-semibold px-2 py-1 rounded" style={{ color: "#a78bfa", background: "#1c1c30", border: "1px solid #2a2a40" }}>
@@ -1742,7 +1741,9 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
           // <98 필터만으로 의미있는 버프만 남음 (100% 상시 패시브 제외)
           const visibleAuras = auras
             .filter(a => a.uptimePercent < 98)
-            .filter(a => !auraHideUnselected || auraFilter.size === 0 || auraFilter.has(a.spellId));
+            .filter(a => !hideUnselected || selectedIds.size === 0 || selectedIds.has(a.spellId));
+          const visibleSpells = sortedSpells
+            .filter(([spellId]) => !hideUnselected || selectedIds.size === 0 || selectedIds.has(spellId));
 
           return (
             <div key={who} className="wcl-card rounded overflow-hidden">
@@ -1762,8 +1763,8 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
               {showAuras && visibleAuras.map(aura => {
                 const hue = (aura.spellId * 137) % 360;
                 const color = `hsl(${hue}, 60%, 55%)`;
-                const isSelected = auraFilter.has(aura.spellId);
-                const isDimmed = auraFilter.size > 0 && !isSelected;
+                const isSelected = selectedIds.has(aura.spellId);
+                const isDimmed = selectedIds.size > 0 && !isSelected;
                 const icon = auraIcon(aura.spellId);
                 const barH = aura.isStacking ? 16 : 12;
 
@@ -1771,9 +1772,9 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
                   <div key={`aura-${aura.spellId}`} className="flex items-center cursor-pointer"
                     style={{ borderBottom: "1px solid #16162a", minHeight: barH + 8, opacity: isDimmed ? 0.3 : 1 }}
                     onClick={() => {
-                      const next = new Set(auraFilter);
+                      const next = new Set(selectedIds);
                       if (next.has(aura.spellId)) next.delete(aura.spellId); else next.add(aura.spellId);
-                      setAuraFilter(next);
+                      setSelectedIds(next);
                     }}>
                     <div className="flex items-center gap-1 px-2 flex-shrink-0" style={{ width: 140 }}>
                       {icon ? <img src={icon} alt="" style={{ width: 16, height: 16, borderRadius: 2, border: isSelected ? `2px solid ${color}` : `1px solid ${color}60` }} />
@@ -1814,15 +1815,23 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
               {showAuras && visibleAuras.length > 0 && <div style={{ height: 2, background: "#1c1c30" }} />}
 
               {/* 스킬 행 */}
-              {sortedSpells.map(([spellId, spellCasts, groupName]) => {
+              {visibleSpells.map(([spellId, spellCasts, groupName]) => {
                 const meta = spellMeta[spellId];
                 const icon = meta?.iconUrl || "";
+                const isSelected = selectedIds.has(spellId);
+                const isDimmed = selectedIds.size > 0 && !isSelected;
 
                 return (
-                  <div key={groupName} className="flex items-center" style={{ borderBottom: "1px solid #16162a", minHeight: 28 }}>
+                  <div key={groupName} className="flex items-center cursor-pointer"
+                    style={{ borderBottom: "1px solid #16162a", minHeight: 28, opacity: isDimmed ? 0.3 : 1 }}
+                    onClick={() => {
+                      const next = new Set(selectedIds);
+                      if (next.has(spellId)) next.delete(spellId); else next.add(spellId);
+                      setSelectedIds(next);
+                    }}>
                     <div className="flex items-center gap-1.5 px-2 flex-shrink-0" style={{ width: 140 }}>
-                      {icon ? <img src={icon} alt="" className="spell-icon" style={{ width: 18, height: 18 }} /> : <div className="w-[18px] h-[18px] rounded bg-gray-800" />}
-                      <span className="text-[10px] text-gray-300 truncate">{groupName}</span>
+                      {icon ? <img src={icon} alt="" className="spell-icon" style={{ width: 18, height: 18, border: isSelected ? `2px solid ${accentColor}` : "none", borderRadius: 3 }} /> : <div className="w-[18px] h-[18px] rounded bg-gray-800" />}
+                      <span className="text-[10px] truncate" style={{ color: isSelected ? "#fff" : "#d1d5db" }}>{groupName}</span>
                       <span className="text-[9px] text-gray-600">{spellCasts.length}</span>
                     </div>
                     <div className="relative flex-1 h-7">
