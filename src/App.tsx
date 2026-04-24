@@ -54,6 +54,8 @@ function App() {
   const [showDonate, setShowDonate] = useState(false);
   const [donateMethod, setDonateMethod] = useState<"toss" | "kakao">("toss");
   const [showLegal, setShowLegal] = useState<"privacy" | "terms" | null>(null);
+  const [showContact, setShowContact] = useState(false);
+  const [contactCopied, setContactCopied] = useState(false);
   const setStep = (s: Step) => { devLog("[step]", step, "→", s); _setStep(s); };
 
   const [myChars, setMyChars] = useState<MyCharacter[]>([]);
@@ -638,7 +640,7 @@ function App() {
           <div className="flex gap-3">
             <button onClick={() => setShowLegal("privacy")} className="hover:text-white underline">개인정보</button>
             <button onClick={() => setShowLegal("terms")} className="hover:text-white underline">이용약관</button>
-            <a href="mailto:ducklogtest@gmail.com" className="hover:text-white underline">의견·버그 제보</a>
+            <button onClick={() => { setShowContact(true); setContactCopied(false); }} className="hover:text-white underline">의견·버그 제보</button>
           </div>
         </div>
       </footer>
@@ -672,6 +674,38 @@ function App() {
               )}
             </div>
             <button onClick={() => setShowLegal(null)} className="mt-4 text-[11px] text-gray-500 hover:text-white">닫기</button>
+          </div>
+        </div>
+      )}
+
+      {/* 의견·버그 제보 모달 — mailto 대신 이메일 표시 + 클립보드 복사 */}
+      {showContact && (
+        <div onClick={() => setShowContact(false)} className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.8)" }}>
+          <div onClick={(e) => e.stopPropagation()} className="wcl-card p-6 max-w-sm w-full text-center"
+            style={{ background: "#131320", border: "1px solid #2a2a40" }}>
+            <div className="text-lg mb-1">📬</div>
+            <h3 className="text-base font-bold text-white mb-2">의견·버그 제보</h3>
+            <p className="text-[11px] text-gray-400 mb-4 leading-relaxed">
+              개선 의견·버그 제보는 아래 이메일로 보내주세요.<br />
+              스크린샷·재현 방법 첨부하시면 더 빠르게 반영됩니다.
+            </p>
+            <div className="flex items-center gap-2 p-2 rounded mb-3" style={{ background: "#0d0d15", border: "1px solid #2a2a40" }}>
+              <span className="flex-1 text-sm font-mono text-purple-300 select-all">ducklogtest@gmail.com</span>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText("ducklogtest@gmail.com").then(() => {
+                    setContactCopied(true);
+                    setTimeout(() => setContactCopied(false), 2000);
+                  });
+                }}
+                className="text-[10px] px-2 py-1 rounded font-semibold transition hover:brightness-125"
+                style={contactCopied
+                  ? { background: "#4ade8030", color: "#4ade80", border: "1px solid #4ade8055" }
+                  : { background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}>
+                {contactCopied ? "복사됨 ✓" : "복사"}
+              </button>
+            </div>
+            <button onClick={() => setShowContact(false)} className="mt-2 text-[11px] text-gray-500 hover:text-white">닫기</button>
           </div>
         </div>
       )}
