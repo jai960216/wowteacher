@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useSyncExternalStore, Fragment } from "react";
 import { isAuthenticated, startAuth, handleCallback, logout, registerLogoutHook } from "./engine/wcl/auth";
 import { clearAllCaches, WCLApiError } from "./engine/wcl/api";
+import { makeAnalysisKey, getAnalysis as getCachedAnalysis, setAnalysis as setCachedAnalysis } from "./engine/wcl/analysisResultCache";
 import { PersistCache } from "./engine/wcl/persistCache";
 import { subscribeRateLimit, getRateLimitSnapshot } from "./engine/wcl/rateLimit";
 import {
@@ -331,17 +332,34 @@ function App() {
         ?? refInfo.players.find((p) => p.name.toLowerCase() === refNameLower);
       if (!refPlayer) throw new Error("비교 대상 플레이어를 찾을 수 없습니다.");
 
-      setLoadingMsg("데이터 수집 + 분석 중...");
-      const me = myReport!.players.find((p) => p.id === myPid);
-      const result = await runFullAnalysis({
-        myReport: myReport!, myFight, myPlayerId: myPid!,
-        myClassID: selectedChar.classID, mySpec: me?.spec ?? "",
-        myHeroSpec: selectedChar.heroSpec ?? "", myName: selectedChar.name,
-        refReportCode: ranking.reportCode, refReport: refInfo, refFight,
-        refPlayerId: refPlayer.id, refName: `${ranking.name}-${ranking.server}`,
-        refHeroSpec: ranking.spec ?? "",
-        isHealer: metric === "hps",
+      // LM 분석 결과 캐시 — 같은 (myFight, refFight, metric, players) 재진입 시 1~16 쿼리 + 분석 skip.
+      // ref player ID 결정 직후 lookup (이 시점부터 모든 식별자 확정).
+      const cacheVersion = (import.meta.env.VITE_CACHE_VERSION as string | undefined) ?? "1";
+      const analysisKey = makeAnalysisKey({
+        myReportCode: myReport!.code, myFightId: myFight.id,
+        refReportCode: ranking.reportCode, refFightId: ranking.fightID,
+        myPlayerId: myPid!, refPlayerId: refPlayer.id,
+        metric, cacheVersion,
       });
+      const cachedResult = getCachedAnalysis(analysisKey);
+      let result: FullAnalysis;
+      if (cachedResult) {
+        devLog("[doAnalysis] LM cache HIT — runFullAnalysis skip");
+        result = cachedResult;
+      } else {
+        setLoadingMsg("데이터 수집 + 분석 중...");
+        const me = myReport!.players.find((p) => p.id === myPid);
+        result = await runFullAnalysis({
+          myReport: myReport!, myFight, myPlayerId: myPid!,
+          myClassID: selectedChar.classID, mySpec: me?.spec ?? "",
+          myHeroSpec: selectedChar.heroSpec ?? "", myName: selectedChar.name,
+          refReportCode: ranking.reportCode, refReport: refInfo, refFight,
+          refPlayerId: refPlayer.id, refName: `${ranking.name}-${ranking.server}`,
+          refHeroSpec: ranking.spec ?? "",
+          isHealer: metric === "hps",
+        });
+        setCachedAnalysis(analysisKey, result);
+      }
       setAnalysis(result);
 
       // 스펠 아이콘 해석

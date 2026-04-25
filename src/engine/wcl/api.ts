@@ -10,6 +10,7 @@ import { getToken } from "./auth";
 import { setRateLimitData, getRateLimitSnapshot } from "./rateLimit";
 import { detectHeroTalent } from "../specs/heroTalents";
 import { PersistCache, clearAllPersistCaches } from "./persistCache";
+import { clearAnalysisCache } from "./analysisResultCache";
 import { devLog } from "../../debug";
 
 // TTL: 리포트·combatantInfo는 킬 완료 후 불변 → 24시간. 파티션은 패치 단위 → 7일.
@@ -255,6 +256,7 @@ export function clearAllCaches(): void {
   partitionCache.clear();
   combatantInfoCache.clear();
   clearAllPersistCaches();
+  clearAnalysisCache();
 }
 
 export async function getReportInfo(reportCode: string): Promise<WCLReportInfo> {
