@@ -10,6 +10,7 @@ import { getToken } from "./auth";
 import { setRateLimitData, getRateLimitSnapshot } from "./rateLimit";
 import { detectHeroTalent } from "../specs/heroTalents";
 import { PersistCache, clearAllPersistCaches } from "./persistCache";
+import { eventsLru, clearEventsLru } from "./lruPersistCache";
 import { clearAnalysisCache } from "./analysisResultCache";
 import { devLog } from "../../debug";
 
@@ -256,6 +257,7 @@ export function clearAllCaches(): void {
   partitionCache.clear();
   combatantInfoCache.clear();
   clearAllPersistCaches();
+  clearEventsLru();
   clearAnalysisCache();
 }
 
@@ -363,6 +365,7 @@ async function fetchReportInfo(reportCode: string): Promise<WCLReportInfo> {
 }
 
 /** 특정 전투의 캐스트 이벤트 */
+const castsInflight = new Map<string, Promise<WCLCastEvent[]>>();
 export async function getCasts(
   reportCode: string,
   _fightId: number,
@@ -371,6 +374,29 @@ export async function getCasts(
   endTime: number,
 ): Promise<WCLCastEvent[]> {
   void _fightId;
+  const key = `casts:${reportCode}:${sourceId}:${startTime}:${endTime}`;
+  // L0 inflight 병합
+  const inflight = castsInflight.get(key);
+  if (inflight) return inflight;
+  // L1 LRU
+  const persisted = eventsLru.get<WCLCastEvent[]>(key);
+  if (persisted) return persisted;
+
+  const promise = fetchCasts(reportCode, sourceId, startTime, endTime).then(v => {
+    eventsLru.set(key, v);
+    return v;
+  });
+  castsInflight.set(key, promise);
+  promise.finally(() => castsInflight.delete(key));
+  return promise;
+}
+
+async function fetchCasts(
+  reportCode: string,
+  sourceId: number,
+  startTime: number,
+  endTime: number,
+): Promise<WCLCastEvent[]> {
   const allEvents: WCLCastEvent[] = [];
   let currentStart: number = startTime;
   const MAX_PAGES = 30;
@@ -510,6 +536,7 @@ export async function getBuffsTable(
  * events 원본 이벤트 스트림에 filterExpression으로 관심 ID만 명시해 받음.
  * applybuff 카운트 = 받은 횟수, apply~remove 구간 합산 = uptime.
  */
+const externalBuffsInflight = new Map<string, Promise<Array<{ spellId: number; applyCount: number; uptimePercent: number }>>>();
 export async function getExternalBuffEvents(
   reportCode: string,
   targetId: number,
@@ -519,6 +546,30 @@ export async function getExternalBuffEvents(
 ): Promise<Array<{ spellId: number; applyCount: number; uptimePercent: number }>> {
   const validIds = spellIds.filter(n => Number.isFinite(n) && n > 0);
   if (validIds.length === 0) return [];
+  // 키 안정화 — 호출자가 다른 순서로 줘도 같은 키
+  const sortedKey = [...validIds].sort((a, b) => a - b).join(",");
+  const cacheKey = `extBuffs:${reportCode}:${targetId}:${startTime}:${endTime}:${sortedKey}`;
+  const inflight = externalBuffsInflight.get(cacheKey);
+  if (inflight) return inflight;
+  const persisted = eventsLru.get<Array<{ spellId: number; applyCount: number; uptimePercent: number }>>(cacheKey);
+  if (persisted) return persisted;
+
+  const promise = fetchExternalBuffEvents(reportCode, targetId, startTime, endTime, validIds).then(v => {
+    eventsLru.set(cacheKey, v);
+    return v;
+  });
+  externalBuffsInflight.set(cacheKey, promise);
+  promise.finally(() => externalBuffsInflight.delete(cacheKey));
+  return promise;
+}
+
+async function fetchExternalBuffEvents(
+  reportCode: string,
+  targetId: number,
+  startTime: number,
+  endTime: number,
+  validIds: number[],
+): Promise<Array<{ spellId: number; applyCount: number; uptimePercent: number }>> {
   const filter = `ability.id in (${validIds.join(", ")})`;
 
   const allEvents: any[] = [];
@@ -616,6 +667,7 @@ export async function getExternalBuffEvents(
  * buff event가 누락되는 경우 시전자의 cast 이벤트로 역추정 — WCL 사이트 Buffs 탭도
  * 이 방식을 병행한다고 알려짐. applybuff 없이 PI 3회를 보여주는 현상 대응.
  */
+const incomingCastsInflight = new Map<string, Promise<Array<{ spellId: number; castCount: number }>>>();
 export async function getIncomingCasts(
   reportCode: string,
   targetId: number,
@@ -625,6 +677,29 @@ export async function getIncomingCasts(
 ): Promise<Array<{ spellId: number; castCount: number }>> {
   const validIds = spellIds.filter(n => Number.isFinite(n) && n > 0);
   if (validIds.length === 0) return [];
+  const sortedKey = [...validIds].sort((a, b) => a - b).join(",");
+  const cacheKey = `inCasts:${reportCode}:${targetId}:${startTime}:${endTime}:${sortedKey}`;
+  const inflight = incomingCastsInflight.get(cacheKey);
+  if (inflight) return inflight;
+  const persisted = eventsLru.get<Array<{ spellId: number; castCount: number }>>(cacheKey);
+  if (persisted) return persisted;
+
+  const promise = fetchIncomingCasts(reportCode, targetId, startTime, endTime, validIds).then(v => {
+    eventsLru.set(cacheKey, v);
+    return v;
+  });
+  incomingCastsInflight.set(cacheKey, promise);
+  promise.finally(() => incomingCastsInflight.delete(cacheKey));
+  return promise;
+}
+
+async function fetchIncomingCasts(
+  reportCode: string,
+  targetId: number,
+  startTime: number,
+  endTime: number,
+  validIds: number[],
+): Promise<Array<{ spellId: number; castCount: number }>> {
   const filter = `ability.id in (${validIds.join(", ")})`;
 
   const allEvents: any[] = [];
@@ -683,6 +758,7 @@ export async function getIncomingCasts(
   return results;
 }
 
+const buffsInflight = new Map<string, Promise<WCLBuffEvent[]>>();
 export async function getBuffs(
   reportCode: string,
   _fightId: number,
@@ -691,6 +767,27 @@ export async function getBuffs(
   endTime: number,
 ): Promise<WCLBuffEvent[]> {
   void _fightId;
+  const key = `buffs:${reportCode}:${targetId}:${startTime}:${endTime}`;
+  const inflight = buffsInflight.get(key);
+  if (inflight) return inflight;
+  const persisted = eventsLru.get<WCLBuffEvent[]>(key);
+  if (persisted) return persisted;
+
+  const promise = fetchBuffs(reportCode, targetId, startTime, endTime).then(v => {
+    eventsLru.set(key, v);
+    return v;
+  });
+  buffsInflight.set(key, promise);
+  promise.finally(() => buffsInflight.delete(key));
+  return promise;
+}
+
+async function fetchBuffs(
+  reportCode: string,
+  targetId: number,
+  startTime: number,
+  endTime: number,
+): Promise<WCLBuffEvent[]> {
   const allEvents: WCLBuffEvent[] = [];
   let currentStart: number = startTime;
   const MAX_PAGES = 30;
@@ -732,6 +829,7 @@ export async function getBuffs(
 }
 
 /** 특정 전투의 자원 이벤트 */
+const resourcesInflight = new Map<string, Promise<WCLResourceEvent[]>>();
 export async function getResources(
   reportCode: string,
   _fightId: number,
@@ -740,6 +838,27 @@ export async function getResources(
   endTime: number,
 ): Promise<WCLResourceEvent[]> {
   void _fightId;
+  const key = `resources:${reportCode}:${sourceId}:${startTime}:${endTime}`;
+  const inflight = resourcesInflight.get(key);
+  if (inflight) return inflight;
+  const persisted = eventsLru.get<WCLResourceEvent[]>(key);
+  if (persisted) return persisted;
+
+  const promise = fetchResources(reportCode, sourceId, startTime, endTime).then(v => {
+    eventsLru.set(key, v);
+    return v;
+  });
+  resourcesInflight.set(key, promise);
+  promise.finally(() => resourcesInflight.delete(key));
+  return promise;
+}
+
+async function fetchResources(
+  reportCode: string,
+  sourceId: number,
+  startTime: number,
+  endTime: number,
+): Promise<WCLResourceEvent[]> {
   const allEvents: WCLResourceEvent[] = [];
   let currentStart: number = startTime;
   const MAX_PAGES = 30;
@@ -1228,7 +1347,29 @@ export async function getEncounterRankings(
 import type { WCLDamageEvent, WCLHealEvent, WCLCombatantInfo, WCLDeathEvent, DamageTableEntry, HealingTableEntry } from "../analysis/types";
 
 /** DamageDone 이벤트 (페이지네이션) */
+const damageDoneInflight = new Map<string, Promise<WCLDamageEvent[]>>();
 export async function getDamageDone(
+  reportCode: string,
+  sourceId: number,
+  startTime: number,
+  endTime: number,
+): Promise<WCLDamageEvent[]> {
+  const key = `dmgDone:${reportCode}:${sourceId}:${startTime}:${endTime}`;
+  const inflight = damageDoneInflight.get(key);
+  if (inflight) return inflight;
+  const persisted = eventsLru.get<WCLDamageEvent[]>(key);
+  if (persisted) return persisted;
+
+  const promise = fetchDamageDone(reportCode, sourceId, startTime, endTime).then(v => {
+    eventsLru.set(key, v);
+    return v;
+  });
+  damageDoneInflight.set(key, promise);
+  promise.finally(() => damageDoneInflight.delete(key));
+  return promise;
+}
+
+async function fetchDamageDone(
   reportCode: string,
   sourceId: number,
   startTime: number,
@@ -1274,7 +1415,29 @@ export async function getDamageDone(
 }
 
 /** Healing 이벤트 (페이지네이션) — getDamageDone과 동일 shape, dataType만 Healing */
+const healingDoneInflight = new Map<string, Promise<WCLHealEvent[]>>();
 export async function getHealingDone(
+  reportCode: string,
+  sourceId: number,
+  startTime: number,
+  endTime: number,
+): Promise<WCLHealEvent[]> {
+  const key = `healDone:${reportCode}:${sourceId}:${startTime}:${endTime}`;
+  const inflight = healingDoneInflight.get(key);
+  if (inflight) return inflight;
+  const persisted = eventsLru.get<WCLHealEvent[]>(key);
+  if (persisted) return persisted;
+
+  const promise = fetchHealingDone(reportCode, sourceId, startTime, endTime).then(v => {
+    eventsLru.set(key, v);
+    return v;
+  });
+  healingDoneInflight.set(key, promise);
+  promise.finally(() => healingDoneInflight.delete(key));
+  return promise;
+}
+
+async function fetchHealingDone(
   reportCode: string,
   sourceId: number,
   startTime: number,
@@ -1333,7 +1496,29 @@ export async function getHealingDone(
 }
 
 /** Healing 요약 테이블 — getDamageTable 미러, overheal 필드 추가 수집 */
+const healingTableInflight = new Map<string, Promise<HealingTableEntry[]>>();
 export async function getHealingTable(
+  reportCode: string,
+  sourceId: number,
+  startTime: number,
+  endTime: number,
+): Promise<HealingTableEntry[]> {
+  const key = `healTable:${reportCode}:${sourceId}:${startTime}:${endTime}`;
+  const inflight = healingTableInflight.get(key);
+  if (inflight) return inflight;
+  const persisted = eventsLru.get<HealingTableEntry[]>(key);
+  if (persisted) return persisted;
+
+  const promise = fetchHealingTable(reportCode, sourceId, startTime, endTime).then(v => {
+    eventsLru.set(key, v);
+    return v;
+  });
+  healingTableInflight.set(key, promise);
+  promise.finally(() => healingTableInflight.delete(key));
+  return promise;
+}
+
+async function fetchHealingTable(
   reportCode: string,
   sourceId: number,
   startTime: number,
@@ -1383,7 +1568,29 @@ export async function getHealingTable(
 }
 
 /** DamageDone 요약 테이블 */
+const damageTableInflight = new Map<string, Promise<DamageTableEntry[]>>();
 export async function getDamageTable(
+  reportCode: string,
+  sourceId: number,
+  startTime: number,
+  endTime: number,
+): Promise<DamageTableEntry[]> {
+  const key = `dmgTable:${reportCode}:${sourceId}:${startTime}:${endTime}`;
+  const inflight = damageTableInflight.get(key);
+  if (inflight) return inflight;
+  const persisted = eventsLru.get<DamageTableEntry[]>(key);
+  if (persisted) return persisted;
+
+  const promise = fetchDamageTable(reportCode, sourceId, startTime, endTime).then(v => {
+    eventsLru.set(key, v);
+    return v;
+  });
+  damageTableInflight.set(key, promise);
+  promise.finally(() => damageTableInflight.delete(key));
+  return promise;
+}
+
+async function fetchDamageTable(
   reportCode: string,
   sourceId: number,
   startTime: number,
@@ -1432,7 +1639,28 @@ export async function getDamageTable(
 }
 
 /** 전투 참여 플레이어 목록 (이름 → sourceID 매핑) */
+const fightPlayerIdsInflight = new Map<string, Promise<Array<{ id: number; name: string }>>>();
 export async function getFightPlayerIds(
+  reportCode: string,
+  startTime: number,
+  endTime: number,
+): Promise<Array<{ id: number; name: string }>> {
+  const key = `fpids:${reportCode}:${startTime}:${endTime}`;
+  const inflight = fightPlayerIdsInflight.get(key);
+  if (inflight) return inflight;
+  const persisted = eventsLru.get<Array<{ id: number; name: string }>>(key);
+  if (persisted) return persisted;
+
+  const promise = fetchFightPlayerIds(reportCode, startTime, endTime).then(v => {
+    eventsLru.set(key, v);
+    return v;
+  });
+  fightPlayerIdsInflight.set(key, promise);
+  promise.finally(() => fightPlayerIdsInflight.delete(key));
+  return promise;
+}
+
+async function fetchFightPlayerIds(
   reportCode: string,
   startTime: number,
   endTime: number,
@@ -1624,7 +1852,28 @@ async function fetchCombatantInfo(
 }
 
 /** 사망 이벤트 */
+const deathsInflight = new Map<string, Promise<WCLDeathEvent[]>>();
 export async function getDeaths(
+  reportCode: string,
+  startTime: number,
+  endTime: number,
+): Promise<WCLDeathEvent[]> {
+  const key = `deaths:${reportCode}:${startTime}:${endTime}`;
+  const inflight = deathsInflight.get(key);
+  if (inflight) return inflight;
+  const persisted = eventsLru.get<WCLDeathEvent[]>(key);
+  if (persisted) return persisted;
+
+  const promise = fetchDeaths(reportCode, startTime, endTime).then(v => {
+    eventsLru.set(key, v);
+    return v;
+  });
+  deathsInflight.set(key, promise);
+  promise.finally(() => deathsInflight.delete(key));
+  return promise;
+}
+
+async function fetchDeaths(
   reportCode: string,
   startTime: number,
   endTime: number,
