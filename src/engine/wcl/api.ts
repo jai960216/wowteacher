@@ -1337,7 +1337,14 @@ export async function getHealingTable(
   startTime: number,
   endTime: number,
 ): Promise<HealingTableEntry[]> {
-  const data: any = await query<any>(`
+  // 서버 공유 캐시 우선 — 같은 fight·sourceId 조합은 다른 유저가 만든 캐시 재사용
+  let data: any = null;
+  if (USE_SHARED_CACHE) {
+    data = await fetchSharedCache<any>("healingTable", {
+      code: reportCode, sourceId, startTime, endTime,
+    });
+  }
+  if (!data) data = await query<any>(`
     query ($code: String!, $startTime: Float!, $endTime: Float!, $sourceID: Int!) {
       reportData {
         report(code: $code) {
@@ -1380,7 +1387,14 @@ export async function getDamageTable(
   startTime: number,
   endTime: number,
 ): Promise<DamageTableEntry[]> {
-  const data: any = await query<any>(`
+  // 서버 공유 캐시 우선
+  let data: any = null;
+  if (USE_SHARED_CACHE) {
+    data = await fetchSharedCache<any>("damageTable", {
+      code: reportCode, sourceId, startTime, endTime,
+    });
+  }
+  if (!data) data = await query<any>(`
     query ($code: String!, $startTime: Float!, $endTime: Float!, $sourceID: Int!) {
       reportData {
         report(code: $code) {
@@ -1421,7 +1435,14 @@ export async function getFightPlayerIds(
   startTime: number,
   endTime: number,
 ): Promise<Array<{ id: number; name: string }>> {
-  const data: any = await query<any>(`
+  // 서버 공유 캐시 우선 — 같은 fight를 본 다른 유저가 만든 캐시 재사용
+  let data: any = null;
+  if (USE_SHARED_CACHE) {
+    data = await fetchSharedCache<any>("fightPlayerIds", {
+      code: reportCode, startTime, endTime,
+    });
+  }
+  if (!data) data = await query<any>(`
     query ($code: String!, $startTime: Float!, $endTime: Float!) {
       reportData {
         report(code: $code) {
@@ -1606,7 +1627,14 @@ export async function getDeaths(
   startTime: number,
   endTime: number,
 ): Promise<WCLDeathEvent[]> {
-  const data: any = await query<any>(`
+  // 서버 공유 캐시 우선
+  let data: any = null;
+  if (USE_SHARED_CACHE) {
+    data = await fetchSharedCache<any>("deaths", {
+      code: reportCode, startTime, endTime,
+    });
+  }
+  if (!data) data = await query<any>(`
     query ($code: String!, $startTime: Float!, $endTime: Float!) {
       reportData {
         report(code: $code) {

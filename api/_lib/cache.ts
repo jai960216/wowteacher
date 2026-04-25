@@ -62,4 +62,9 @@ export const TTL = {
   reportInfo: 24 * 60 * 60 * 1000,    // 24h
   combatantInfo: 7 * 24 * 60 * 60 * 1000, // 7d
   partition: 3 * 24 * 60 * 60 * 1000, // 3d
+  // 사망 fight의 events·table은 본질적 immutable — 길게 캐시
+  fightPlayerIds: 7 * 24 * 60 * 60 * 1000,  // 7d
+  damageTable: 30 * 24 * 60 * 60 * 1000,    // 30d
+  healingTable: 30 * 24 * 60 * 60 * 1000,   // 30d
+  deaths: 7 * 24 * 60 * 60 * 1000,          // 7d
 };
