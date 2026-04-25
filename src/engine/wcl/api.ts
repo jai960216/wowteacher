@@ -275,7 +275,12 @@ export async function getReportInfo(reportCode: string): Promise<WCLReportInfo> 
 }
 
 async function fetchReportInfo(reportCode: string): Promise<WCLReportInfo> {
-  const data = await query<any>(`
+  // 서버 공유 캐시 우선 — 같은 리포트를 본 다른 유저가 만든 캐시 재사용
+  let data: any = null;
+  if (USE_SHARED_CACHE) {
+    data = await fetchSharedCache<any>("report", { code: reportCode });
+  }
+  if (!data) data = await query<any>(`
     query ($code: String!) {
       reportData {
         report(code: $code) {
@@ -1472,7 +1477,12 @@ async function fetchCombatantInfo(
   startTime: number,
   endTime: number,
 ): Promise<WCLCombatantInfo[]> {
-  const data: any = await query<any>(`
+  // 서버 공유 캐시 우선 — 같은 fight를 본 다른 유저가 만든 캐시 재사용
+  let data: any = null;
+  if (USE_SHARED_CACHE) {
+    data = await fetchSharedCache<any>("combatantInfo", { code: reportCode, startTime, endTime });
+  }
+  if (!data) data = await query<any>(`
     query ($code: String!, $startTime: Float!, $endTime: Float!) {
       reportData {
         report(code: $code) {

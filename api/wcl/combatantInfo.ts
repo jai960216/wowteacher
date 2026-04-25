@@ -36,11 +36,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return;
     }
 
+    // 클라이언트 fetchCombatantInfo와 동일한 events 쿼리 — 캐시 HIT 시 동일 transformer 재사용
     const data = await wclQuery(`
       query ($code: String!, $startTime: Float!, $endTime: Float!) {
         reportData {
           report(code: $code) {
-            table(dataType: Summary, startTime: $startTime, endTime: $endTime, includeCombatantInfo: true)
+            events(
+              startTime: $startTime
+              endTime: $endTime
+              dataType: CombatantInfo
+              limit: 50
+            ) {
+              data
+            }
           }
         }
       }

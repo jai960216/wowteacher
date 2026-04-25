@@ -30,6 +30,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return;
     }
 
+    // 클라이언트 fetchReportInfo와 동일한 shape 유지 — 캐시 HIT 시 동일 transformer 재사용
     const data = await wclQuery(`
       query ($code: String!) {
         reportData {
@@ -49,21 +50,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               friendlyPlayers
             }
             masterData {
-              actors(type: "Player") {
+              players: actors(type: "Player") {
                 id
                 name
                 type
                 subType
                 server
               }
+              npcs: actors(type: "NPC") {
+                id
+                name
+                type
+                subType
+              }
               abilities {
                 gameID
                 name
-                icon
+                type
               }
             }
-            region { slug }
-            zone { id name }
           }
         }
       }

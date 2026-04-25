@@ -21,9 +21,9 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
     .maybeSingle();
   if (error || !data) return null;
   if (new Date(data.expires_at).getTime() < Date.now()) return null;
-  // hit_count 비동기 증가 (대기 안 함)
-  supabase.from("wcl_cache").update({ hit_count: undefined })
-    .eq("key", vkey).then(() => {}, () => {});
+  // hit_count 비동기 atomic 증가 — RPC로 hit_count = hit_count + 1
+  supabase.rpc("increment_wcl_cache_hit", { cache_key: vkey })
+    .then(() => {}, () => {});
   return data.value as T;
 }
 
