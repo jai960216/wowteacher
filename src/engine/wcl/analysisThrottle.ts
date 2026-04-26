@@ -1,5 +1,5 @@
 // ============================================
-// 일반 사용자 분석 횟수 제한 (10분 슬라이딩 윈도우 3회)
+// 일반 사용자 분석 횟수 제한 (1시간 슬라이딩 윈도우 20회)
 // ============================================
 // WCL 토큰은 client_id에 부여돼 모든 사용자가 공유하므로 (한 시간 9000pt 선착순),
 // 한 명이 폭주하면 전체 사용자가 막힌다. 분석 시작 시점을 기록하고
@@ -9,8 +9,8 @@
 // 분기를 책임진다.
 
 const STORAGE_KEY = "wcl_analysis_history";
-export const WINDOW_MS = 10 * 60 * 1000; // 10분
-export const MAX_USES = 3;
+export const WINDOW_MS = 60 * 60 * 1000; // 1시간
+export const MAX_USES = 20;
 
 const listeners = new Set<() => void>();
 

@@ -283,7 +283,7 @@ function App() {
       const recoveryStr = snap.nextRecoveryAt
         ? new Date(snap.nextRecoveryAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false })
         : "";
-      setError(`분석은 10분에 3회까지만 가능합니다. ${recoveryStr}에 다시 시도해주세요.`);
+      setError(`분석은 1시간에 20회까지만 가능합니다. ${recoveryStr}에 다시 시도해주세요.`);
       return;
     }
     if (!isAdmin) recordAnalysis();
@@ -807,13 +807,13 @@ function RateLimitBadge({ isAdmin }: { isAdmin: boolean }) {
   const recoveryStr = snap.nextRecoveryAt
     ? new Date(snap.nextRecoveryAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false })
     : null;
-  const color = snap.remaining === 0 ? "#f87171" : snap.remaining === 1 ? "#fbbf24" : "#9ca3af";
+  const color = snap.remaining === 0 ? "#f87171" : snap.remaining <= 5 ? "#fbbf24" : "#9ca3af";
   const display = snap.remaining === 0
     ? `0회 분석가능 · ${recoveryStr ?? "-"} 회복`
     : recoveryStr
       ? `${snap.remaining}회 분석가능 · ${recoveryStr} 회복`
       : `${snap.remaining}회 분석가능`;
-  const tooltip = `10분에 3회까지 분석 가능${recoveryStr ? ` · ${recoveryStr}에 1회 회복` : ""}`;
+  const tooltip = `1시간에 20회까지 분석 가능${recoveryStr ? ` · ${recoveryStr}에 1회 회복` : ""}`;
 
   return (
     <span title={tooltip} className="text-[11px] font-mono tabular-nums select-none" style={{ color }}>
