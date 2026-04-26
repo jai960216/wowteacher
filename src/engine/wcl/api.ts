@@ -259,6 +259,7 @@ export function clearAllCaches(): void {
   clearAllPersistCaches();
   clearEventsLru();
   clearAnalysisCache();
+  clearCurrentUserCache();
 }
 
 export async function getReportInfo(reportCode: string): Promise<WCLReportInfo> {
@@ -998,6 +999,30 @@ export async function getMyEncounterRankings(
     duration: r.duration ?? 0,
   })).filter((r: any) => r.reportCode);
 }
+
+/**
+ * 로그인한 WCL 유저의 식별 정보 (user API).
+ * 관리자 분기(VITE_ADMIN_WCL_USER_NAME 매칭)에 사용. 모듈 캐시로 1회만 발사.
+ */
+let currentUserCache: Promise<{ id: number; name: string } | null> | null = null;
+export function getCurrentUser(): Promise<{ id: number; name: string } | null> {
+  if (currentUserCache) return currentUserCache;
+  currentUserCache = (async () => {
+    const data: any = await query(`
+      {
+        userData {
+          currentUser { id name }
+        }
+      }
+    `, {}, true);
+    const u = data?.userData?.currentUser;
+    if (!u || typeof u.id !== "number" || typeof u.name !== "string") return null;
+    return { id: u.id, name: u.name };
+  })();
+  currentUserCache.catch(() => { currentUserCache = null; });
+  return currentUserCache;
+}
+function clearCurrentUserCache(): void { currentUserCache = null; }
 
 /** 로그인한 유저의 캐릭터 목록 가져오기 (user API) */
 export async function getMyCharacters(): Promise<Array<{

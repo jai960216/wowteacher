@@ -5,7 +5,10 @@ import { makeAnalysisKey, getAnalysis as getCachedAnalysis, setAnalysis as setCa
 import { PersistCache } from "./engine/wcl/persistCache";
 import { subscribeRateLimit, getRateLimitSnapshot } from "./engine/wcl/rateLimit";
 import {
-  getMyCharacters, searchCharacter, getReportInfo, getEncounterRankings, getFightPlayerIds, getMyEncounterRankings,
+  subscribeAnalysisThrottle, getThrottleSnapshot, canAnalyze, recordAnalysis,
+} from "./engine/wcl/analysisThrottle";
+import {
+  getMyCharacters, getCurrentUser, searchCharacter, getReportInfo, getEncounterRankings, getFightPlayerIds, getMyEncounterRankings,
   CLASS_NAMES_KR, CLASS_COLORS, DIFFICULTY_NAMES, DIFFICULTY_COLORS,
   getClassIconUrl, getPercentileColor,
   type WCLReportInfo, type WCLRanking, type WCLFight, type ZoneRankingData,
@@ -48,6 +51,7 @@ const ICON_BASE = "https://wow.zamimg.com/images/wow/icons/medium";
 
 function App() {
   const [authed, setAuthed] = useState(isAuthenticated());
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
@@ -92,8 +96,18 @@ function App() {
     registerLogoutHook(() => {
       clearAllCaches();
       rankingsCache.current.clear();
+      setCurrentUserName(null);
     });
   }, []);
+
+  // 로그인 후 WCL 본인 username 1회 조회 (관리자 분기용)
+  useEffect(() => {
+    if (!authed) { setCurrentUserName(null); return; }
+    getCurrentUser().then(u => setCurrentUserName(u?.name ?? null)).catch(() => setCurrentUserName(null));
+  }, [authed]);
+
+  const adminName = (import.meta.env.VITE_ADMIN_WCL_USER_NAME as string | undefined) ?? "";
+  const isAdmin = !!adminName && currentUserName === adminName;
 
   useEffect(() => {
     const qs = new URLSearchParams(window.location.search);
@@ -262,6 +276,17 @@ function App() {
   async function doAnalysis(ranking: WCLRanking) {
     if (!selectedFight || !selectedChar) return;
     if (loading) return; // 중복 클릭 차단 — 분석은 30+ 쿼리 터지므로 반드시 필요
+    // 일반 사용자 분석 횟수 제한 (관리자 우회) — WCL 토큰은 client_id 공유라 한 명 폭주가
+    // 전체 사용자 막힘으로 이어진다. 시작 시점을 기록해 10분 슬라이딩 윈도우 3회로 제한.
+    if (!isAdmin && !canAnalyze()) {
+      const snap = getThrottleSnapshot();
+      const recoveryStr = snap.nextRecoveryAt
+        ? new Date(snap.nextRecoveryAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false })
+        : "";
+      setError(`분석은 10분에 3회까지만 가능합니다. ${recoveryStr}에 다시 시도해주세요.`);
+      return;
+    }
+    if (!isAdmin) recordAnalysis();
     setRefSpec(ranking.spec ?? "");
     setStatScan(null);
     setLoading(true); setLoadingMsg("리포트 로딩..."); setError(null);
@@ -433,7 +458,7 @@ function App() {
             >
               ☕ 커피 한 잔 사주기
             </button>
-            <RateLimitBadge />
+            <RateLimitBadge isAdmin={isAdmin} />
             {step !== "characters" && <button onClick={goBack} className="text-gray-500 hover:text-white">&larr; 뒤로</button>}
             <button onClick={() => { logout(); setAuthed(false); setStep("login"); }} className="text-gray-600 hover:text-gray-400">로그아웃</button>
           </div>
@@ -739,28 +764,60 @@ function App() {
 // WCL API 잔여 한도 배지
 // ============================================
 
-function RateLimitBadge() {
+function RateLimitBadge({ isAdmin }: { isAdmin: boolean }) {
   const data = useSyncExternalStore(subscribeRateLimit, getRateLimitSnapshot);
   const [now, setNow] = useState<number>(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 30_000);
+    const id = setInterval(() => setNow(Date.now()), 10_000);
     return () => clearInterval(id);
   }, []);
+  // 분석 카운터 변경 즉시 배지 갱신
+  useEffect(() => {
+    return subscribeAnalysisThrottle(() => setNow(Date.now()));
+  }, []);
 
-  if (!data) return null;
+  if (isAdmin) {
+    if (!data) return null;
+    const resetTs = data.observedAt + data.pointsResetIn * 1000;
+    const isPastReset = now > resetTs;
+    const used = data.limitPerHour > 0 ? data.pointsSpentThisHour / data.limitPerHour : 0;
+    const remainPct = Math.max(0, Math.min(100, Math.round((1 - used) * 100)));
 
-  const elapsedSec = (now - data.observedAt) / 1000;
-  const secondsLeft = Math.max(0, data.pointsResetIn - elapsedSec);
-  const minutesLeft = Math.ceil(secondsLeft / 60);
-  const used = data.limitPerHour > 0 ? data.pointsSpentThisHour / data.limitPerHour : 0;
-  const remainPct = Math.max(0, Math.min(100, Math.round((1 - used) * 100)));
+    const color = remainPct < 20 ? "#f87171" : remainPct < 50 ? "#fbbf24" : "#9ca3af";
+    const resetTimeStr = new Date(resetTs).toLocaleTimeString("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const display = isPastReset
+      ? `API ${remainPct}% · 초기화됨`
+      : `API ${remainPct}% · ${resetTimeStr} 초기화`;
+    const tooltip = `WCL API 한도 ${data.pointsSpentThisHour.toFixed(0)}/${data.limitPerHour} 사용${isPastReset ? "" : ` · ${resetTimeStr} 초기화`}`;
 
-  const color = remainPct < 20 ? "#f87171" : remainPct < 50 ? "#fbbf24" : "#9ca3af";
-  const tooltip = `WCL API 한도 ${data.pointsSpentThisHour.toFixed(0)}/${data.limitPerHour} 사용 · ${minutesLeft}분 후 초기화`;
+    return (
+      <span title={tooltip} className="text-[11px] font-mono tabular-nums select-none" style={{ color }}>
+        {display}
+      </span>
+    );
+  }
+
+  // 일반 사용자 — 본인 분석 잔여 횟수 표시
+  const snap = getThrottleSnapshot();
+  void now; // setNow trigger로 매 갱신 시 snap 재계산
+  const recoveryStr = snap.nextRecoveryAt
+    ? new Date(snap.nextRecoveryAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false })
+    : null;
+  const color = snap.remaining === 0 ? "#f87171" : snap.remaining === 1 ? "#fbbf24" : "#9ca3af";
+  const display = snap.remaining === 0
+    ? `0회 분석가능 · ${recoveryStr ?? "-"} 회복`
+    : recoveryStr
+      ? `${snap.remaining}회 분석가능 · ${recoveryStr} 회복`
+      : `${snap.remaining}회 분석가능`;
+  const tooltip = `10분에 3회까지 분석 가능${recoveryStr ? ` · ${recoveryStr}에 1회 회복` : ""}`;
 
   return (
     <span title={tooltip} className="text-[11px] font-mono tabular-nums select-none" style={{ color }}>
-      API {remainPct}% · {minutesLeft}분
+      {display}
     </span>
   );
 }
