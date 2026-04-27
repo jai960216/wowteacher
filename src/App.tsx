@@ -528,7 +528,28 @@ function App() {
         {step === "characters" && !loading && (
           <div>
             <h2 className="text-sm font-semibold text-gray-400 mb-4 uppercase tracking-wider">내 캐릭터</h2>
-            {myChars.length === 0 ? <p className="text-gray-600 text-center py-12">등록된 캐릭터가 없습니다</p> : (
+            {myChars.length === 0 ? (
+              <div className="text-center py-12 px-4">
+                <p className="text-gray-300 text-sm mb-3">등록된 캐릭터가 없습니다</p>
+                <p className="text-xs text-gray-500 leading-relaxed mb-5">
+                  WarcraftLogs 계정에 캐릭터가 연결되어 있어야 목록에 표시됩니다.<br />
+                  WCL 프로필에서 <span className="text-gray-400">Battle.net 연동</span> 및{" "}
+                  <span className="text-gray-400">캐릭터 가져오기(Import / Claim)</span>가 완료되어 있는지 확인해 주세요.
+                </p>
+                <a
+                  href="https://www.warcraftlogs.com/profile"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border border-purple-500/50 text-purple-300 hover:bg-purple-500/10 transition"
+                >
+                  WarcraftLogs 프로필 열기
+                  <span className="text-[10px]">↗</span>
+                </a>
+                <p className="text-[10px] text-gray-600 mt-4">
+                  연동 후에도 표시되지 않으면 페이지를 새로고침해 주세요.
+                </p>
+              </div>
+            ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {myChars.map((c) => (
                   <button key={`${c.name}-${c.server}-${c.classID}`} onClick={() => selectChar(c)} className="wcl-row flex items-center gap-3 p-3 text-left rounded">
