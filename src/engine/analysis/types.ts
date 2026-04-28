@@ -210,6 +210,12 @@ export interface FullAnalysis {
   // 패턴 분석 (딜사이클, 자원별 습관, 시퀀스)
   patterns: import("./patterns").PatternAnalysis | null;
 
+  // 보스 캐스트 — my fight 기준만. ref fight는 시간축이 달라 혼합 표시 안 함.
+  bossCasts: BossCastSnapshot[];
+
+  // 페이즈 전환점 — my fight 기준만. 단일 페이즈 보스면 [].
+  phases: PhaseMarker[];
+
   // 개선 제안
   suggestions: Array<{
     priority: "high" | "medium" | "low";

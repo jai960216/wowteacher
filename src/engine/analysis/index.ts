@@ -4,7 +4,7 @@
 
 import {
   getCasts, getBuffs, getResources, getDamageDone, getDamageTable, getHealingDone, getHealingTable, getCombatantInfo,
-  getIncomingCasts,
+  getIncomingCasts, getBossCasts,
   type WCLReportInfo, type WCLFight,
 } from "../wcl/api";
 import { analyzeUptime, compareUptime } from "./uptime";
@@ -12,6 +12,7 @@ import { buildCastSnapshots, mergeTimelines, detectCooldowns } from "./timeline"
 import { analyzePatterns } from "./patterns";
 import { filterPassiveCasts } from "./filters";
 import { buildAuraTimeline } from "./auras";
+import { buildBossSnapshots, buildPhaseMarkers } from "./bossTimeline";
 import { detectHeroTalent } from "../specs/heroTalents";
 import { EXTERNAL_BUFFS, EXTERNAL_BUFF_SPELL_IDS, EXTERNAL_SPELL_TO_LABEL } from "../externalBuffs";
 import { devLog } from "../../debug";
@@ -49,7 +50,7 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
     return p.then(v => { devLog(`[analysis] ✓ ${label} (${Math.round(performance.now() - t0)}ms)`); return v; },
                   e => { console.error(`[analysis] ✗ ${label} 실패:`, e); throw e; });
   };
-  // 1) 데이터 수집 (병렬 — 12개 API 호출)
+  // 1) 데이터 수집 (병렬 — 13개 API 호출. bossCasts는 my fight 기준 1세트만.)
   const [
     myCasts, refCasts,
     myBuffs, refBuffs,
@@ -57,6 +58,7 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
     myDmgEvents, refDmgEvents,
     myDmgTable, refDmgTable,
     myCombatantInfos, refCombatantInfos,
+    bossCastsRaw,
   ] = await Promise.all([
     track("myCasts", getCasts(input.myReport.code, input.myFight.id, input.myPlayerId, input.myFight.startTime, input.myFight.endTime)),
     track("refCasts", getCasts(input.refReportCode, input.refFight.id, input.refPlayerId, input.refFight.startTime, input.refFight.endTime)),
@@ -70,6 +72,7 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
     track("refDmgTable", getDamageTable(input.refReportCode, input.refPlayerId, input.refFight.startTime, input.refFight.endTime)),
     track("myCombatantInfo", getCombatantInfo(input.myReport.code, input.myFight.startTime, input.myFight.endTime)),
     track("refCombatantInfo", getCombatantInfo(input.refReportCode, input.refFight.startTime, input.refFight.endTime)),
+    track("bossCasts", getBossCasts(input.myReport.code, input.myFight.id, input.myFight.startTime, input.myFight.endTime)),
   ]);
   devLog("[analysis] 데이터 수집 완료");
 
@@ -139,6 +142,13 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
   const mySnapshots = buildCastSnapshots(myFilteredCasts, myResources, myBuffs, input.myFight.startTime, 120, myCasts, myAbilityMap);
   const refSnapshots = buildCastSnapshots(refFilteredCasts, refResources, refBuffs, input.refFight.startTime, 120, refCasts, refAbilityMap);
   const timeline = mergeTimelines(mySnapshots, refSnapshots);
+
+  // 6.5) 보스 타임라인 — 보스 캐스트 다이아몬드 + 페이즈 전환선 (my fight 기준)
+  const bossActorIds = pickBossActorIds(input.myReport.npcs, input.myFight.name);
+  const npcNameMap = new Map<number, string>(input.myReport.npcs.map(n => [n.id, n.name]));
+  const bossCasts = buildBossSnapshots(bossCastsRaw, input.myFight.startTime, bossActorIds, npcNameMap, myAbilityMap);
+  const phases = buildPhaseMarkers(input.myFight.phaseTransitions ?? [], input.myFight.startTime);
+  devLog(`[analysis] 보스: ${bossCasts.length} casts (raw ${bossCastsRaw.length}, bossActorIds ${bossActorIds.size}), ${phases.length} phases`);
 
   // 7) 쿨다운 (실제 데이터에서 동적 감지)
   const rawCooldowns = detectCooldowns(mySnapshots, refSnapshots);
@@ -261,6 +271,8 @@ export async function runFullAnalysis(input: AnalysisInput): Promise<FullAnalysi
     myAuras,
     refAuras,
     patterns,
+    bossCasts,
+    phases,
     suggestions,
   };
 }
@@ -624,6 +636,29 @@ function buildTargetBreakdown(
     refBossPercent: refTotal > 0 ? Math.round((refBossDmg / refTotal) * 1000) / 10 : 0,
     targets,
   };
+}
+
+/**
+ * 보스 NPC actor id 추출.
+ * 1순위 — masterData subType="Boss" (WCL 서버가 명시한 보스).
+ * 2순위 — fight.name 부분 일치 (다중 보스 인카운터 / subType 누락 보스 fallback).
+ * 짧은 이름 노이즈 방지용으로 fightName.length >= 3 가드.
+ */
+function pickBossActorIds(
+  npcs: WCLReportInfo["npcs"],
+  fightName: string,
+): Set<number> {
+  const out = new Set<number>();
+  for (const n of npcs) if (n.subType === "Boss") out.add(n.id);
+  if (out.size === 0 && fightName.length >= 3) {
+    const fightLower = fightName.toLowerCase();
+    for (const n of npcs) {
+      if (!n.name) continue;
+      const lower = n.name.toLowerCase();
+      if (lower.includes(fightLower) || fightLower.includes(lower)) out.add(n.id);
+    }
+  }
+  return out;
 }
 
 function fmtDPS(n: number): string {
