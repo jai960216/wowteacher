@@ -148,6 +148,16 @@ export interface WCLCastEvent {
   fight: number;
 }
 
+/** 보스(적) 캐스트 이벤트 — sourceID는 NPC actor id. WCLCastEvent와 의도·필터링 단계가 달라 별 타입. */
+export interface WCLBossCastEvent {
+  timestamp: number;
+  sourceID: number;
+  abilityGameID: number;
+  abilityName: string;
+  abilityIcon: string;
+  fight: number;
+}
+
 export interface WCLBuffEvent {
   timestamp: number;
   type: string;
@@ -469,6 +479,75 @@ async function fetchCasts(
   }
 
   return allEvents;
+}
+
+/** 보스(적) 전체 캐스트 — fightIDs + hostilityType: Enemies. 보스/쫄/소환수 모두 섞여 옴 (필터는 분석 레이어). */
+const bossCastsInflight = new Map<string, Promise<WCLBossCastEvent[]>>();
+export async function getBossCasts(
+  reportCode: string,
+  fightId: number,
+  startTime: number,
+  endTime: number,
+): Promise<WCLBossCastEvent[]> {
+  const key = `bossCasts:${reportCode}:${fightId}:${startTime}:${endTime}`;
+  const inflight = bossCastsInflight.get(key);
+  if (inflight) return inflight;
+  const persisted = eventsLru.get<WCLBossCastEvent[]>(key);
+  if (persisted) return persisted;
+
+  const promise = fetchBossCasts(reportCode, fightId, startTime, endTime).then(v => {
+    eventsLru.set(key, v);
+    return v;
+  });
+  bossCastsInflight.set(key, promise);
+  promise.finally(() => bossCastsInflight.delete(key));
+  return promise;
+}
+
+async function fetchBossCasts(
+  reportCode: string,
+  fightId: number,
+  startTime: number,
+  endTime: number,
+): Promise<WCLBossCastEvent[]> {
+  const all: WCLBossCastEvent[] = [];
+  let currentStart = startTime;
+  const MAX_PAGES = 30;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const data: any = await query<any>(`
+      query ($code: String!, $startTime: Float!, $endTime: Float!, $fightIDs: [Int]!) {
+        reportData {
+          report(code: $code) {
+            events(
+              startTime: $startTime
+              endTime: $endTime
+              dataType: Casts
+              hostilityType: Enemies
+              fightIDs: $fightIDs
+              limit: 500
+            ) { data nextPageTimestamp }
+          }
+        }
+      }
+    `, { code: reportCode, startTime: currentStart, endTime, fightIDs: [fightId] });
+
+    const ev: any = data.reportData?.report?.events;
+    if (!ev) break;
+    for (const e of (ev.data ?? [])) {
+      all.push({
+        timestamp: e.timestamp,
+        sourceID: e.sourceID ?? 0,
+        abilityGameID: e.abilityGameID ?? 0,
+        abilityName: e.ability?.name ?? "",
+        abilityIcon: (e.ability?.abilityIcon ?? "").replace(/\.jpg$/i, ""),
+        fight: e.fight ?? fightId,
+      });
+    }
+    const next = ev.nextPageTimestamp ?? 0;
+    if (next <= 0 || next <= currentStart) break;
+    currentStart = next;
+  }
+  return all;
 }
 
 /** 특정 전투의 버프 이벤트 */
