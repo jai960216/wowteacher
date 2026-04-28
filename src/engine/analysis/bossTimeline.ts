@@ -45,6 +45,10 @@ export function pickBossActorIds(
  * - bossActorIds: 보스 NPC sourceID 집합 (쫄·소환수·환경 캐스트 제외용 필터)
  * - npcNameMap: sourceID → 표시 이름
  * - abilityMap: id → name 보강 (raw에 abilityName 비어있을 때)
+ *
+ * 메커닉 분류(`mechClass`)는 2026-04-29 카이메루스 라이브 검증 결과 폐기.
+ * 키워드 휴리스틱은 false negative가 너무 많아 실용성이 없음(90 casts 중 0 매칭).
+ * UI는 본인/상대 트랙처럼 스킬별 행 그룹으로 표시하며 사용자가 selectedIds로 직접 가린다.
  */
 export function buildBossSnapshots(
   rawCasts: WCLBossCastEvent[],
@@ -63,28 +67,11 @@ export function buildBossSnapshots(
       spellName: name,
       iconUrl: c.abilityIcon ? toIconUrl(c.abilityIcon) : undefined,
       sourceName: npcNameMap.get(c.sourceID) ?? "보스",
-      mechClass: classifyMech(name),
     });
   }
   // 시간순 정렬 — 입력이 뒤섞일 가능성 방어 (디듀프가 인접 비교라 정렬 선행 필수)
   out.sort((a, b) => a.timestamp - b.timestamp);
   return dedupeAdjacent(out);
-}
-
-/**
- * 메커닉 분류 — 1차는 키워드 화이트리스트만.
- * cast time 정보는 events 응답에 없고 별도 가져오려면 비용 부담 → 휴리스틱 유지.
- * "전체" 옵션이 누락 폴백 역할.
- */
-export function classifyMech(spellName: string): "major" | "normal" {
-  const lower = spellName.toLowerCase();
-  // WCL이 메커닉으로 자주 표기하는 어휘 — false positive 보다 false negative 보수적으로 다룸
-  const majorKeywords = [
-    "decimat", "annihil", "obliter", "incinerat", "purg", "doom",
-    "void", "storm", "phase", "intermission", "rage", "berserk", "enrage",
-  ];
-  if (majorKeywords.some(k => lower.includes(k))) return "major";
-  return "normal";
 }
 
 /**

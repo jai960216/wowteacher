@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildBossSnapshots, buildPhaseMarkers, classifyMech } from "../bossTimeline";
+import { buildBossSnapshots, buildPhaseMarkers } from "../bossTimeline";
 import type { WCLBossCastEvent, PhaseTransition } from "../../wcl/api";
 
 const FIGHT_START = 1_000_000; // ms
@@ -15,31 +15,6 @@ function mkCast(over: Partial<WCLBossCastEvent> = {}): WCLBossCastEvent {
     ...over,
   };
 }
-
-describe("classifyMech", () => {
-  it("키워드 화이트리스트 매칭은 major", () => {
-    expect(classifyMech("Decimate")).toBe("major");
-    expect(classifyMech("Annihilation")).toBe("major");
-    expect(classifyMech("Obliterate Soul")).toBe("major");
-    expect(classifyMech("Void Storm")).toBe("major");
-    expect(classifyMech("Phase Transition")).toBe("major");
-    expect(classifyMech("Berserk")).toBe("major");
-    expect(classifyMech("Enrage")).toBe("major");
-  });
-
-  it("키워드 미매칭은 normal", () => {
-    expect(classifyMech("Melee")).toBe("normal");
-    expect(classifyMech("Auto Attack")).toBe("normal");
-    expect(classifyMech("Shadow Bolt")).toBe("normal");
-    expect(classifyMech("")).toBe("normal");
-  });
-
-  it("대소문자 무관", () => {
-    expect(classifyMech("ANNIHILATION")).toBe("major");
-    expect(classifyMech("annihilation")).toBe("major");
-    expect(classifyMech("AnNiHiLaTiOn")).toBe("major");
-  });
-});
 
 describe("buildBossSnapshots", () => {
   const npcNameMap = new Map<number, string>([[1, "Boss"], [2, "Add"]]);
@@ -152,17 +127,6 @@ describe("buildBossSnapshots", () => {
     const raw = [mkCast(), mkCast({ abilityGameID: 101 })];
     const out = buildBossSnapshots(raw, FIGHT_START, new Set(), npcNameMap, abilityMap);
     expect(out).toEqual([]);
-  });
-
-  it("mechClass는 spellName 분류 결과 반영", () => {
-    const bossIds = new Set([1]);
-    const raw = [
-      mkCast({ abilityGameID: 100, abilityName: "Annihilation" }),
-      mkCast({ abilityGameID: 101, abilityName: "Melee", timestamp: FIGHT_START + 1000 }),
-    ];
-    const out = buildBossSnapshots(raw, FIGHT_START, bossIds, npcNameMap, abilityMap);
-    expect(out[0].mechClass).toBe("major");
-    expect(out[1].mechClass).toBe("normal");
   });
 });
 

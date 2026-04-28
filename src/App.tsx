@@ -19,7 +19,7 @@ import { specNameKr, isHealerSpec } from "./engine/specs/specNames";
 import { heroTalentNameKr } from "./engine/specs/heroTalents";
 import { encounterNameKr } from "./engine/specs/encounterNames";
 import { getSpecIconUrl } from "./engine/specs/specIcons";
-import type { CastSnapshot, GearItem } from "./engine/analysis/types";
+import type { CastSnapshot, GearItem, BossCastSnapshot } from "./engine/analysis/types";
 import type { AuraInfo } from "./engine/analysis/auras";
 import { EXTERNAL_BUFFS } from "./engine/externalBuffs";
 import { scanTopStats, type TopStatsScanResult } from "./engine/analysis/statScan";
@@ -1716,8 +1716,6 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
   // 보스 트랙 + 페이즈 선 — my fight 기준만 (설계서 §2.2.2)
   const [showBoss, setShowBoss] = useState(true);
   const [showPhases, setShowPhases] = useState(true);
-  // mechFilter는 보스 트랙 내 다이아몬드 필터. showBoss와 다른 축 (off여도 트랙은 그릴 수 있음).
-  const [mechFilter, setMechFilter] = useState<"major" | "all" | "off">("major");
   // 선택 필터 — 오라/스킬 공통. 클릭으로 id 토글, "선택만 보기"로 필터링
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [hideUnselected, setHideUnselected] = useState(false);
@@ -1866,7 +1864,7 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
     const wh = window.$WowheadPower;
     const timer = setTimeout(() => wh.refreshLinks(), 150);
     return () => clearTimeout(timer);
-  }, [view, scrollRange, showBoss, mechFilter]);
+  }, [view, scrollRange, showBoss]);
 
   // 데이터 준비
   const players = view === "both" ? ["my", "ref"] as const : [view] as const;
@@ -1918,18 +1916,6 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
               : { background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}>
             페이즈 {showPhases ? "ON" : "OFF"}
           </button>
-          {/* 메커닉 필터 세그먼트 — select가 아닌 버튼 (드래그/wheel 충돌 방지) */}
-          <div className="flex gap-0.5 p-0.5 rounded" style={{ background: "#131320", border: "1px solid #1c1c30" }}>
-            {([["major", "주요만"], ["all", "전체"], ["off", "끄기"]] as const).map(([k, label]) => (
-              <button key={k} onClick={() => setMechFilter(k)}
-                className="text-[11px] px-2 py-1 rounded font-semibold transition hover:brightness-125"
-                style={mechFilter === k
-                  ? { background: "linear-gradient(135deg, #ef4444, #dc2626)", color: "#fff" }
-                  : { background: "transparent", color: "#9ca3af" }}>
-                {label}
-              </button>
-            ))}
-          </div>
           <button onClick={() => setHideUnselected(!hideUnselected)}
             className="text-[11px] px-3 py-1 rounded font-semibold transition hover:brightness-125"
             style={hideUnselected
@@ -2030,18 +2016,27 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
           </div>
         )}
 
-        {/* 보스 트랙 카드 — my fight 기준 보스 캐스트 다이아몬드 (설계서 §5.3.3) */}
+        {/* 보스 트랙 카드 — 본인/상대 트랙과 동일한 spellGroupsByName 패턴.
+            메커닉 휴리스틱은 폐기(2026-04-29 카이메루스 라이브 검증). 사용자가 selectedIds로 직접 가린다.
+            다이아몬드 모양 + 빨강 액센트로 본인/상대 사각 아이콘과 시각 차별화. */}
         {showBoss && (() => {
-          const visibleBossCasts = mechFilter === "off"
-            ? []
-            : mechFilter === "major"
-              ? analysis.bossCasts.filter(c => c.mechClass === "major")
-              : analysis.bossCasts;
+          const bossSpellGroupsByName = new Map<string, { spellId: number; iconUrl?: string; sourceName: string; casts: BossCastSnapshot[] }>();
+          for (const c of analysis.bossCasts) {
+            const name = c.spellName || `#${c.spellId}`;
+            const existing = bossSpellGroupsByName.get(name);
+            if (existing) { existing.casts.push(c); }
+            else { bossSpellGroupsByName.set(name, { spellId: c.spellId, iconUrl: c.iconUrl, sourceName: c.sourceName, casts: [c] }); }
+          }
+          const sortedBossSpells = [...bossSpellGroupsByName.entries()]
+            .sort((a, b) => b[1].casts.length - a[1].casts.length);
+          const visibleBossSpells = sortedBossSpells
+            .filter(([, g]) => !hideUnselected || selectedIds.size === 0 || selectedIds.has(g.spellId));
+          const bossAccent = "#ef4444";
           return (
-            <div className="wcl-card rounded" style={{ overflow: "visible" }}>
+            <div className="wcl-card rounded" style={{ overflow: "visible", borderLeft: `2px solid ${bossAccent}` }}>
               {/* 시간축 헤더 */}
               <div className="relative h-6" style={{ background: "#1a0a0a", borderBottom: "1px solid #3a1a1a" }}>
-                <span className="absolute left-2 top-1 text-[9px] font-bold" style={{ color: "#ef4444" }}>👹 보스</span>
+                <span className="absolute left-2 top-1 text-[9px] font-bold" style={{ color: bossAccent }}>👹 보스</span>
                 <div style={{ marginLeft: 140 }}>
                   {ticks.map(t => (
                     <span key={t} className="absolute text-[9px] text-gray-600 font-mono" style={{ left: `calc(140px + ${toPercent(t)}% * (100% - 140px) / 100%)`, top: 4 }}>
@@ -2051,51 +2046,74 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
                 </div>
               </div>
 
-              {/* 보스 메커닉 단일 행 */}
-              <div className="flex items-center" style={{ minHeight: 28, borderBottom: "1px solid #16162a" }}>
-                <div className="flex items-center gap-1.5 px-2 flex-shrink-0" style={{ width: 140 }}>
-                  <span className="text-[10px]" style={{ color: "#ef4444" }}>👹 보스 메커닉</span>
-                  <span className="text-[9px] text-gray-600 ml-auto">{visibleBossCasts.length}</span>
+              {/* 보스 캐스트 데이터 없을 때 한 줄 안내 */}
+              {analysis.bossCasts.length === 0 && (
+                <div className="flex items-center px-2" style={{ minHeight: 28, borderBottom: "1px solid #16162a" }}>
+                  <span className="text-[9px] text-gray-600">보스 캐스트 데이터 없음</span>
                 </div>
-                <div className="relative flex-1 h-7">
-                  {visibleBossCasts.length === 0 && mechFilter !== "off" && (
-                    <span className="absolute left-2 top-2 text-[9px] text-gray-600">
-                      {analysis.bossCasts.length === 0
-                        ? "보스 캐스트 데이터 없음"
-                        : "필터된 결과 없음 — '전체'로 변경하세요"}
-                    </span>
-                  )}
-                  {visibleBossCasts.map((c, i) => {
-                    const pct = toPercent(c.timestamp);
-                    if (pct < 0 || pct > 100) return null;
-                    return (
-                      <a key={i} className="absolute top-0.5 group"
-                        style={{ left: `${pct}%`, transform: "translateX(-50%)" }}
-                        href={`https://www.wowhead.com/spell=${c.spellId}`}
-                        data-wowhead={`spell=${c.spellId}`}
-                        target="_blank" rel="noopener noreferrer"
-                        onClick={e => e.preventDefault()}>
-                        {/* 다이아몬드: 외곽 div를 45도 회전, 내부 img는 -45도로 보정 (설계서 §5.3.3) */}
-                        <div style={{
-                          width: 20, height: 20, transform: "rotate(45deg)",
-                          border: "2px solid #ef4444", borderRadius: 3,
-                          background: "#1a0a0a", display: "flex",
-                          alignItems: "center", justifyContent: "center",
-                        }}>
-                          {c.iconUrl
-                            ? <img src={c.iconUrl} alt="" style={{ width: 14, height: 14, transform: "rotate(-45deg)", borderRadius: 2 }} />
-                            : <span style={{ transform: "rotate(-45deg)", fontSize: 10, color: "#fca5a5", fontWeight: "bold" }}>!</span>}
-                        </div>
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1.5 bg-black/95 text-[9px] text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-20" style={{ minWidth: 120 }}>
-                          <div className="font-bold">{c.spellName}</div>
-                          <div className="text-gray-400">{c.sourceName} | {c.timestamp.toFixed(1)}s</div>
-                          {c.mechClass === "major" && <div style={{ color: "#ef4444" }}>주요 메커닉</div>}
-                        </div>
-                      </a>
-                    );
-                  })}
-                </div>
-              </div>
+              )}
+
+              {/* 스킬별 행 — 시전 횟수 많은 순 */}
+              {visibleBossSpells.map(([groupName, g]) => {
+                const isSelected = selectedIds.has(g.spellId);
+                const isDimmed = selectedIds.size > 0 && !isSelected;
+                return (
+                  <div key={groupName} className="flex items-center cursor-pointer"
+                    style={{ borderBottom: "1px solid #16162a", minHeight: 28, opacity: isDimmed ? 0.3 : 1 }}
+                    onClick={() => {
+                      const next = new Set(selectedIds);
+                      if (next.has(g.spellId)) next.delete(g.spellId); else next.add(g.spellId);
+                      setSelectedIds(next);
+                    }}>
+                    <div className="flex items-center gap-1.5 px-2 flex-shrink-0" style={{ width: 140 }}>
+                      {/* 라벨 컬럼도 다이아몬드 아이콘 — 본인/상대 사각과 시각 차별화 */}
+                      <div style={{
+                        width: 18, height: 18, transform: "rotate(45deg)",
+                        border: isSelected ? `2px solid ${bossAccent}` : `1.5px solid ${bossAccent}80`,
+                        borderRadius: 3, background: "#1a0a0a",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        flexShrink: 0,
+                      }}>
+                        {g.iconUrl
+                          ? <img src={g.iconUrl} alt="" style={{ width: 12, height: 12, transform: "rotate(-45deg)", borderRadius: 2 }} />
+                          : <span style={{ transform: "rotate(-45deg)", fontSize: 9, color: "#fca5a5", fontWeight: "bold" }}>!</span>}
+                      </div>
+                      <span className="text-[10px] truncate" style={{ color: isSelected ? "#fff" : "#fca5a5" }}>{groupName}</span>
+                      <span className="text-[9px] text-gray-600">{g.casts.length}</span>
+                    </div>
+                    <div className="relative flex-1 h-7">
+                      {g.casts.map((c, i) => {
+                        const pct = toPercent(c.timestamp);
+                        if (pct < 0 || pct > 100) return null;
+                        return (
+                          <a key={i} className="absolute top-0.5 group"
+                            style={{ left: `${pct}%`, transform: "translateX(-50%)" }}
+                            href={`https://www.wowhead.com/spell=${c.spellId}`}
+                            data-wowhead={`spell=${c.spellId}`}
+                            target="_blank" rel="noopener noreferrer"
+                            onClick={e => e.preventDefault()}>
+                            {/* 다이아몬드 마커 — 외곽 45도 회전 + 내부 img -45도 보정 */}
+                            <div style={{
+                              width: 20, height: 20, transform: "rotate(45deg)",
+                              border: `2px solid ${bossAccent}`, borderRadius: 3,
+                              background: "#1a0a0a", display: "flex",
+                              alignItems: "center", justifyContent: "center",
+                            }}>
+                              {c.iconUrl
+                                ? <img src={c.iconUrl} alt="" style={{ width: 14, height: 14, transform: "rotate(-45deg)", borderRadius: 2 }} />
+                                : <span style={{ transform: "rotate(-45deg)", fontSize: 10, color: "#fca5a5", fontWeight: "bold" }}>!</span>}
+                            </div>
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1.5 bg-black/95 text-[9px] text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-20" style={{ minWidth: 120 }}>
+                              <div className="font-bold">{c.spellName}</div>
+                              <div className="text-gray-400">{c.sourceName} | {c.timestamp.toFixed(1)}s</div>
+                            </div>
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           );
         })()}
