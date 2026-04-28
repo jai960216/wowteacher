@@ -12,7 +12,7 @@ import { buildCastSnapshots, mergeTimelines, detectCooldowns } from "./timeline"
 import { analyzePatterns } from "./patterns";
 import { filterPassiveCasts } from "./filters";
 import { buildAuraTimeline } from "./auras";
-import { buildBossSnapshots, buildPhaseMarkers } from "./bossTimeline";
+import { buildBossSnapshots, buildPhaseMarkers, pickBossActorIds } from "./bossTimeline";
 import { detectHeroTalent } from "../specs/heroTalents";
 import { EXTERNAL_BUFFS, EXTERNAL_BUFF_SPELL_IDS, EXTERNAL_SPELL_TO_LABEL } from "../externalBuffs";
 import { devLog } from "../../debug";
@@ -636,29 +636,6 @@ function buildTargetBreakdown(
     refBossPercent: refTotal > 0 ? Math.round((refBossDmg / refTotal) * 1000) / 10 : 0,
     targets,
   };
-}
-
-/**
- * 보스 NPC actor id 추출.
- * 1순위 — masterData subType="Boss" (WCL 서버가 명시한 보스).
- * 2순위 — fight.name 부분 일치 (다중 보스 인카운터 / subType 누락 보스 fallback).
- * 짧은 이름 노이즈 방지용으로 fightName.length >= 3 가드.
- */
-function pickBossActorIds(
-  npcs: WCLReportInfo["npcs"],
-  fightName: string,
-): Set<number> {
-  const out = new Set<number>();
-  for (const n of npcs) if (n.subType === "Boss") out.add(n.id);
-  if (out.size === 0 && fightName.length >= 3) {
-    const fightLower = fightName.toLowerCase();
-    for (const n of npcs) {
-      if (!n.name) continue;
-      const lower = n.name.toLowerCase();
-      if (lower.includes(fightLower) || fightLower.includes(lower)) out.add(n.id);
-    }
-  }
-  return out;
 }
 
 function fmtDPS(n: number): string {

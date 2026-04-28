@@ -5,8 +5,40 @@
 // 분석 결과의 UI-ready 형태. WCL raw events를 받아 차트가 바로 그릴 수 있는
 // 초 단위 좌표 + 메커닉 분류 + 디듀프까지 마친 데이터로 변환.
 
-import type { WCLBossCastEvent, PhaseTransition } from "../wcl/api";
+import type { WCLBossCastEvent, PhaseTransition, WCLReportInfo } from "../wcl/api";
 import type { BossCastSnapshot, PhaseMarker } from "./types";
+
+/**
+ * 보스 NPC actor id 추출.
+ * - subType="Boss" 매칭과 fight.name 부분 일치 매칭의 **합집합**.
+ * - 한 리포트에 여러 fight가 있을 때 다른 fight의 보스가 subType="Boss"로
+ *   표시돼 있으면 현재 fight 보스가 누락될 수 있어, fight name fallback도 항상 함께 적용.
+ * - 짧은 이름 노이즈 방지용으로 fightName.length >= 3 가드.
+ * - environment NPC ("World" / "Environment" / "Unknown") 거부 (설계 §12.3).
+ */
+const ENVIRONMENT_NPC_NAMES = new Set(["world", "environment", "unknown"]);
+
+export function pickBossActorIds(
+  npcs: WCLReportInfo["npcs"],
+  fightName: string,
+): Set<number> {
+  const out = new Set<number>();
+  for (const n of npcs) {
+    if (n.subType !== "Boss") continue;
+    if (n.name && ENVIRONMENT_NPC_NAMES.has(n.name.toLowerCase())) continue;
+    out.add(n.id);
+  }
+  if (fightName.length >= 3) {
+    const fightLower = fightName.toLowerCase();
+    for (const n of npcs) {
+      if (!n.name) continue;
+      const lower = n.name.toLowerCase();
+      if (ENVIRONMENT_NPC_NAMES.has(lower)) continue;
+      if (lower.includes(fightLower) || fightLower.includes(lower)) out.add(n.id);
+    }
+  }
+  return out;
+}
 
 /**
  * 보스 캐스트 raw → 차트용 스냅샷.
