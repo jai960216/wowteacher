@@ -2058,8 +2058,12 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
                   <span className="text-[9px] text-gray-600 ml-auto">{visibleBossCasts.length}</span>
                 </div>
                 <div className="relative flex-1 h-7">
-                  {analysis.bossCasts.length === 0 && mechFilter !== "off" && (
-                    <span className="absolute left-2 top-2 text-[9px] text-gray-600">데이터 없음</span>
+                  {visibleBossCasts.length === 0 && mechFilter !== "off" && (
+                    <span className="absolute left-2 top-2 text-[9px] text-gray-600">
+                      {analysis.bossCasts.length === 0
+                        ? "보스 캐스트 데이터 없음"
+                        : "필터된 결과 없음 — '전체'로 변경하세요"}
+                    </span>
                   )}
                   {visibleBossCasts.map((c, i) => {
                     const pct = toPercent(c.timestamp);
