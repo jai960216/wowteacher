@@ -1713,6 +1713,11 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
   // 현재 선택된 시간 범위 라벨 — 사용자가 버튼 클릭으로만 변경. 드래그로 안 바뀜.
   const [selectedRangeLabel, setSelectedRangeLabel] = useState<string>("60초");
   const [showAuras, setShowAuras] = useState(true);
+  // 보스 트랙 + 페이즈 선 — my fight 기준만 (설계서 §2.2.2)
+  const [showBoss, setShowBoss] = useState(true);
+  const [showPhases, setShowPhases] = useState(true);
+  // mechFilter는 보스 트랙 내 다이아몬드 필터. showBoss와 다른 축 (off여도 트랙은 그릴 수 있음).
+  const [mechFilter, setMechFilter] = useState<"major" | "all" | "off">("major");
   // 선택 필터 — 오라/스킬 공통. 클릭으로 id 토글, "선택만 보기"로 필터링
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [hideUnselected, setHideUnselected] = useState(false);
@@ -1855,13 +1860,13 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
   for (let t = Math.ceil(scrollRange.start / tickInterval) * tickInterval; t <= scrollRange.end; t += tickInterval) ticks.push(t);
   const toPercent = (sec: number) => ((sec - scrollRange.start) / rangeLen) * 100;
 
-  // Wowhead 툴팁 새로고침
+  // Wowhead 툴팁 새로고침 — 보스 트랙도 wowhead 링크를 쓰므로 deps에 포함
   useEffect(() => {
     if (!window.$WowheadPower) return;
     const wh = window.$WowheadPower;
     const timer = setTimeout(() => wh.refreshLinks(), 150);
     return () => clearTimeout(timer);
-  }, [view, scrollRange]);
+  }, [view, scrollRange, showBoss, mechFilter]);
 
   // 데이터 준비
   const players = view === "both" ? ["my", "ref"] as const : [view] as const;
@@ -1898,6 +1903,33 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
               : { background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}>
             오라 {showAuras ? "ON" : "OFF"}
           </button>
+          {/* 보스 트랙 토글 — 빨강 액센트로 보스 강조 (설계서 §5.2) */}
+          <button onClick={() => setShowBoss(!showBoss)}
+            className="text-[11px] px-3 py-1 rounded font-semibold transition hover:brightness-125"
+            style={showBoss
+              ? { background: "linear-gradient(135deg, #ef4444, #dc2626)", color: "#fff" }
+              : { background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}>
+            보스 {showBoss ? "ON" : "OFF"}
+          </button>
+          <button onClick={() => setShowPhases(!showPhases)}
+            className="text-[11px] px-3 py-1 rounded font-semibold transition hover:brightness-125"
+            style={showPhases
+              ? { background: "linear-gradient(135deg, #ef4444, #dc2626)", color: "#fff" }
+              : { background: "#1c1c30", color: "#9ca3af", border: "1px solid #2a2a40" }}>
+            페이즈 {showPhases ? "ON" : "OFF"}
+          </button>
+          {/* 메커닉 필터 세그먼트 — select가 아닌 버튼 (드래그/wheel 충돌 방지) */}
+          <div className="flex gap-0.5 p-0.5 rounded" style={{ background: "#131320", border: "1px solid #1c1c30" }}>
+            {([["major", "주요만"], ["all", "전체"], ["off", "끄기"]] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setMechFilter(k)}
+                className="text-[11px] px-2 py-1 rounded font-semibold transition hover:brightness-125"
+                style={mechFilter === k
+                  ? { background: "linear-gradient(135deg, #ef4444, #dc2626)", color: "#fff" }
+                  : { background: "transparent", color: "#9ca3af" }}>
+                {label}
+              </button>
+            ))}
+          </div>
           <button onClick={() => setHideUnselected(!hideUnselected)}
             className="text-[11px] px-3 py-1 rounded font-semibold transition hover:brightness-125"
             style={hideUnselected
@@ -1948,7 +1980,122 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
       </div>
 
       {/* 타임라인 차트 (휠 스크롤 대상) */}
-      <div ref={chartRef} className="space-y-3">
+      <div ref={chartRef} className="relative space-y-3">
+        {/* 페이즈 세로선 — 차트 전체를 가로지르는 단일 absolute overlay (라벨 컬럼 140px 비켜감).
+            pointer-events:none 으로 다이아몬드/오라 클릭 차단 안 함. */}
+        {showPhases && analysis.phases.length > 0 && (
+          <div className="absolute inset-0 pointer-events-none z-10" style={{ paddingLeft: 140 }}>
+            <div className="relative w-full h-full">
+              {analysis.phases.map(p => {
+                const pct = toPercent(p.timeSec);
+                if (pct < 0 || pct > 100) return null;
+                return (
+                  <div key={p.phaseId} className="absolute top-0 bottom-0"
+                    style={{
+                      left: `${pct}%`,
+                      width: 0,
+                      borderLeft: "1px dashed #9ca3af",
+                      opacity: 0.5,
+                    }} />
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 페이즈 라벨 행 — 차트 최상단. 가시 시간 범위 밖이면 안 그림. */}
+        {showPhases && analysis.phases.length > 0 && (
+          <div className="relative" style={{ height: 16, background: "#0a0a14", border: "1px solid #1c1c30", borderRadius: 4 }}>
+            <div className="absolute top-0 left-0 right-0" style={{ paddingLeft: 140 }}>
+              <div className="relative w-full h-full">
+                {analysis.phases.map(p => {
+                  const pct = toPercent(p.timeSec);
+                  if (pct < 0 || pct > 100) return null;
+                  return (
+                    <span key={p.phaseId}
+                      className="absolute text-[9px] font-bold px-1.5 rounded"
+                      style={{
+                        left: `${pct}%`,
+                        transform: "translateX(-50%)",
+                        top: 1,
+                        color: "#fff",
+                        background: "#6b7280",
+                      }}>
+                      {p.label}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 보스 트랙 카드 — my fight 기준 보스 캐스트 다이아몬드 (설계서 §5.3.3) */}
+        {showBoss && (() => {
+          const visibleBossCasts = mechFilter === "off"
+            ? []
+            : mechFilter === "major"
+              ? analysis.bossCasts.filter(c => c.mechClass === "major")
+              : analysis.bossCasts;
+          return (
+            <div className="wcl-card rounded" style={{ overflow: "visible" }}>
+              {/* 시간축 헤더 */}
+              <div className="relative h-6" style={{ background: "#1a0a0a", borderBottom: "1px solid #3a1a1a" }}>
+                <span className="absolute left-2 top-1 text-[9px] font-bold" style={{ color: "#ef4444" }}>👹 보스</span>
+                <div style={{ marginLeft: 140 }}>
+                  {ticks.map(t => (
+                    <span key={t} className="absolute text-[9px] text-gray-600 font-mono" style={{ left: `calc(140px + ${toPercent(t)}% * (100% - 140px) / 100%)`, top: 4 }}>
+                      {t}s
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* 보스 메커닉 단일 행 */}
+              <div className="flex items-center" style={{ minHeight: 28, borderBottom: "1px solid #16162a" }}>
+                <div className="flex items-center gap-1.5 px-2 flex-shrink-0" style={{ width: 140 }}>
+                  <span className="text-[10px]" style={{ color: "#ef4444" }}>👹 보스 메커닉</span>
+                  <span className="text-[9px] text-gray-600 ml-auto">{visibleBossCasts.length}</span>
+                </div>
+                <div className="relative flex-1 h-7">
+                  {analysis.bossCasts.length === 0 && mechFilter !== "off" && (
+                    <span className="absolute left-2 top-2 text-[9px] text-gray-600">데이터 없음</span>
+                  )}
+                  {visibleBossCasts.map((c, i) => {
+                    const pct = toPercent(c.timestamp);
+                    if (pct < 0 || pct > 100) return null;
+                    return (
+                      <a key={i} className="absolute top-0.5 group"
+                        style={{ left: `${pct}%`, transform: "translateX(-50%)" }}
+                        href={`https://www.wowhead.com/spell=${c.spellId}`}
+                        data-wowhead={`spell=${c.spellId}`}
+                        target="_blank" rel="noopener noreferrer"
+                        onClick={e => e.preventDefault()}>
+                        {/* 다이아몬드: 외곽 div를 45도 회전, 내부 img는 -45도로 보정 (설계서 §5.3.3) */}
+                        <div style={{
+                          width: 20, height: 20, transform: "rotate(45deg)",
+                          border: "2px solid #ef4444", borderRadius: 3,
+                          background: "#1a0a0a", display: "flex",
+                          alignItems: "center", justifyContent: "center",
+                        }}>
+                          {c.iconUrl
+                            ? <img src={c.iconUrl} alt="" style={{ width: 14, height: 14, transform: "rotate(-45deg)", borderRadius: 2 }} />
+                            : <span style={{ transform: "rotate(-45deg)", fontSize: 10, color: "#fca5a5", fontWeight: "bold" }}>!</span>}
+                        </div>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1.5 bg-black/95 text-[9px] text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-20" style={{ minWidth: 120 }}>
+                          <div className="font-bold">{c.spellName}</div>
+                          <div className="text-gray-400">{c.sourceName} | {c.timestamp.toFixed(1)}s</div>
+                          {c.mechClass === "major" && <div style={{ color: "#ef4444" }}>주요 메커닉</div>}
+                        </div>
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {players.map(who => {
           const casts = getPlayerCasts(who);
           const auras = getPlayerAuras(who);
