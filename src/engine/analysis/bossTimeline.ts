@@ -49,6 +49,8 @@ export function pickBossActorIds(
  * 메커닉 분류(`mechClass`)는 2026-04-29 카이메루스 라이브 검증 결과 폐기.
  * 키워드 휴리스틱은 false negative가 너무 많아 실용성이 없음(90 casts 중 0 매칭).
  * UI는 본인/상대 트랙처럼 스킬별 행 그룹으로 표시하며 사용자가 selectedIds로 직접 가린다.
+ *
+ * 아이콘은 spellMeta(SpellResolver) 단일 경로로 해석. events 응답엔 abilityIcon이 없음.
  */
 export function buildBossSnapshots(
   rawCasts: WCLBossCastEvent[],
@@ -65,7 +67,6 @@ export function buildBossSnapshots(
       timestamp: (c.timestamp - fightStart) / 1000,
       spellId: c.abilityGameID,
       spellName: name,
-      iconUrl: c.abilityIcon ? toIconUrl(c.abilityIcon) : undefined,
       sourceName: npcNameMap.get(c.sourceID) ?? "보스",
     });
   }
@@ -86,12 +87,6 @@ function dedupeAdjacent(arr: BossCastSnapshot[]): BossCastSnapshot[] {
     out.push(s);
   }
   return out;
-}
-
-function toIconUrl(icon: string): string {
-  if (!icon) return "";
-  if (icon.startsWith("http")) return icon;
-  return `https://wow.zamimg.com/images/wow/icons/large/${icon}.jpg`;
 }
 
 /**

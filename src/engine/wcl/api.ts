@@ -148,13 +148,13 @@ export interface WCLCastEvent {
   fight: number;
 }
 
-/** 보스(적) 캐스트 이벤트 — sourceID는 NPC actor id. WCLCastEvent와 의도·필터링 단계가 달라 별 타입. */
+/** 보스(적) 캐스트 이벤트 — sourceID는 NPC actor id. WCLCastEvent와 의도·필터링 단계가 달라 별 타입.
+ *  events 응답엔 ability.abilityIcon이 들어오지 않으므로 아이콘은 별도 spellMeta(SpellResolver) 경로로 해석. */
 export interface WCLBossCastEvent {
   timestamp: number;
   sourceID: number;
   abilityGameID: number;
   abilityName: string;
-  abilityIcon: string;
   fight: number;
 }
 
@@ -551,7 +551,6 @@ async function fetchBossCasts(
         sourceID: e.sourceID ?? 0,
         abilityGameID: e.abilityGameID ?? 0,
         abilityName: e.ability?.name ?? "",
-        abilityIcon: (e.ability?.abilityIcon ?? "").replace(/\.jpg$/i, ""),
         fight: e.fight ?? fightId,
       });
     }

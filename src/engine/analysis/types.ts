@@ -121,12 +121,12 @@ export interface DamageBreakdownEntry {
 /**
  * 보스 캐스트 한 건. 차트 다이아몬드 한 점 = 한 스냅샷.
  * 메커닉 분류는 폐기됨(2026-04-29 라이브 검증). 본인/상대 트랙처럼 스킬별 행 그룹으로 표시.
+ * 아이콘은 spellMeta(SpellResolver)에서 해석 — events 응답엔 abilityIcon이 없으므로 단일 경로.
  */
 export interface BossCastSnapshot {
   timestamp: number;       // 전투 시작 기준 초 (CastSnapshot과 동일 단위)
   spellId: number;
   spellName: string;
-  iconUrl?: string;        // events 응답의 abilityIcon (resolver 별도 — boss 전용 폴백 경로)
   sourceName: string;      // 시전한 보스/쫄 이름 (멀티-NPC 경우 구분)
 }
 

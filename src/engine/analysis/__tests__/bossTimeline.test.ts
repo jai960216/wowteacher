@@ -10,7 +10,6 @@ function mkCast(over: Partial<WCLBossCastEvent> = {}): WCLBossCastEvent {
     sourceID: 1,
     abilityGameID: 100,
     abilityName: "Test Spell",
-    abilityIcon: "",
     fight: 1,
     ...over,
   };
@@ -92,19 +91,6 @@ describe("buildBossSnapshots", () => {
     const out = buildBossSnapshots(raw, FIGHT_START, bossIds, npcNameMap, map);
     expect(out[0].spellName).toBe("MappedName");
     expect(out[1].spellName).toBe("#300");
-  });
-
-  it("iconUrl: 비어있으면 undefined, http면 그대로, slug면 zamimg URL", () => {
-    const bossIds = new Set([1]);
-    const raw = [
-      mkCast({ abilityGameID: 100, abilityIcon: "" }),
-      mkCast({ abilityGameID: 101, abilityIcon: "https://example.com/x.jpg" }),
-      mkCast({ abilityGameID: 102, abilityIcon: "spell_shadow_test" }),
-    ];
-    const out = buildBossSnapshots(raw, FIGHT_START, bossIds, npcNameMap, abilityMap);
-    expect(out[0].iconUrl).toBeUndefined();
-    expect(out[1].iconUrl).toBe("https://example.com/x.jpg");
-    expect(out[2].iconUrl).toBe("https://wow.zamimg.com/images/wow/icons/large/spell_shadow_test.jpg");
   });
 
   it("sourceName은 npcNameMap에서, 미매칭 시 '보스'", () => {

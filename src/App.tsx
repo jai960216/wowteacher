@@ -400,6 +400,8 @@ function App() {
       // 오라 spell ID도 해석 (아이콘 표시용)
       for (const a of result.myAuras) ids.add(a.spellId);
       for (const a of result.refAuras) ids.add(a.spellId);
+      // WHY: 보스 행 아이콘도 wowhead resolver로 해석 (events 응답엔 abilityIcon 없음)
+      for (const c of result.bossCasts) ids.add(c.spellId);
       await resolver.resolveMany([...ids].map((id) => ({ id, localName: "" })));
       setSpellMeta(resolver.getAll());
 
@@ -2020,12 +2022,13 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
             메커닉 휴리스틱은 폐기(2026-04-29 카이메루스 라이브 검증). 사용자가 selectedIds로 직접 가린다.
             다이아몬드 모양 + 빨강 액센트로 본인/상대 사각 아이콘과 시각 차별화. */}
         {showBoss && (() => {
-          const bossSpellGroupsByName = new Map<string, { spellId: number; iconUrl?: string; sourceName: string; casts: BossCastSnapshot[] }>();
+          // 아이콘은 spellMeta(SpellResolver) 단일 경로로 해석 — events 응답엔 abilityIcon이 없음.
+          const bossSpellGroupsByName = new Map<string, { spellId: number; sourceName: string; casts: BossCastSnapshot[] }>();
           for (const c of analysis.bossCasts) {
             const name = c.spellName || `#${c.spellId}`;
             const existing = bossSpellGroupsByName.get(name);
             if (existing) { existing.casts.push(c); }
-            else { bossSpellGroupsByName.set(name, { spellId: c.spellId, iconUrl: c.iconUrl, sourceName: c.sourceName, casts: [c] }); }
+            else { bossSpellGroupsByName.set(name, { spellId: c.spellId, sourceName: c.sourceName, casts: [c] }); }
           }
           const sortedBossSpells = [...bossSpellGroupsByName.entries()]
             .sort((a, b) => b[1].casts.length - a[1].casts.length);
@@ -2057,6 +2060,7 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
               {visibleBossSpells.map(([groupName, g]) => {
                 const isSelected = selectedIds.has(g.spellId);
                 const isDimmed = selectedIds.size > 0 && !isSelected;
+                const bossIcon = spellMeta[g.spellId]?.iconUrl || "";
                 return (
                   <div key={groupName} className="flex items-center cursor-pointer"
                     style={{ borderBottom: "1px solid #16162a", minHeight: 28, opacity: isDimmed ? 0.3 : 1 }}
@@ -2074,8 +2078,8 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
                         display: "flex", alignItems: "center", justifyContent: "center",
                         flexShrink: 0,
                       }}>
-                        {g.iconUrl
-                          ? <img src={g.iconUrl} alt="" style={{ width: 12, height: 12, transform: "rotate(-45deg)", borderRadius: 2 }} />
+                        {bossIcon
+                          ? <img src={bossIcon} alt="" style={{ width: 12, height: 12, transform: "rotate(-45deg)", borderRadius: 2 }} />
                           : <span style={{ transform: "rotate(-45deg)", fontSize: 9, color: "#fca5a5", fontWeight: "bold" }}>!</span>}
                       </div>
                       <span className="text-[10px] truncate" style={{ color: isSelected ? "#fff" : "#fca5a5" }}>{groupName}</span>
@@ -2085,6 +2089,7 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
                       {g.casts.map((c, i) => {
                         const pct = toPercent(c.timestamp);
                         if (pct < 0 || pct > 100) return null;
+                        const markerIcon = spellMeta[c.spellId]?.iconUrl || "";
                         return (
                           <a key={i} className="absolute top-0.5 group"
                             style={{ left: `${pct}%`, transform: "translateX(-50%)" }}
@@ -2099,8 +2104,8 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
                               background: "#1a0a0a", display: "flex",
                               alignItems: "center", justifyContent: "center",
                             }}>
-                              {c.iconUrl
-                                ? <img src={c.iconUrl} alt="" style={{ width: 14, height: 14, transform: "rotate(-45deg)", borderRadius: 2 }} />
+                              {markerIcon
+                                ? <img src={markerIcon} alt="" style={{ width: 14, height: 14, transform: "rotate(-45deg)", borderRadius: 2 }} />
                                 : <span style={{ transform: "rotate(-45deg)", fontSize: 10, color: "#fca5a5", fontWeight: "bold" }}>!</span>}
                             </div>
                             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1.5 bg-black/95 text-[9px] text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-20" style={{ minWidth: 120 }}>
