@@ -297,7 +297,13 @@ export async function getReportInfo(reportCode: string): Promise<WCLReportInfo> 
   return promise;
 }
 
-/** WCL phaseTransitions 응답 정규화 — 객체 배열 또는 string JSON 양쪽 방어. */
+/**
+ * WCL phaseTransitions 응답 정규화 — 객체 배열 / string JSON / nested array 모두 방어.
+ *
+ * 주 응답 shape: `[{ id, startTime }, ...]`. 그러나 v2 docs 일부 페이지가
+ * `Array<Array<Band>>` (start/end 묶음) 변종을 시사하므로 1단계 flatten으로
+ * 가능한 한 살리고, 그래도 모양이 안 맞으면 devLog 후 빈 배열.
+ */
 function normalizePhaseTransitions(raw: any): PhaseTransition[] {
   if (!raw) return [];
   let arr: any = raw;
@@ -306,6 +312,12 @@ function normalizePhaseTransitions(raw: any): PhaseTransition[] {
     catch { devLog("[getReportInfo] phaseTransitions JSON parse 실패"); return []; }
   }
   if (!Array.isArray(arr)) return [];
+  // nested array 변종 (Array<Array<Band>>) — 한 단계 flatten 후 동일 검증.
+  // WCL 일부 응답이 phase별 band 묶음으로 떨어질 가능성 방어.
+  if (arr.length > 0 && Array.isArray(arr[0])) {
+    devLog("[getReportInfo] phaseTransitions nested array 변종 감지 — flatten 시도");
+    arr = arr.flat();
+  }
   return arr
     .filter((p: any) => p && typeof p.startTime === "number")
     .map((p: any) => ({ id: Number(p.id ?? 0), startTime: Number(p.startTime) }));
