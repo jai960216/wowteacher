@@ -1717,7 +1717,8 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
   const [showAuras, setShowAuras] = useState(true);
   // 보스 트랙 + 페이즈 선 — my fight 기준만 (설계서 §2.2.2)
   const [showBoss, setShowBoss] = useState(true);
-  const [showPhases, setShowPhases] = useState(true);
+  // 12.0.5 페이즈 정의가 부정확한 보스가 많아 기본 OFF — 토글로 켤 수 있음
+  const [showPhases, setShowPhases] = useState(false);
   // 선택 필터 — 오라/스킬 공통. 클릭으로 id 토글, "선택만 보기"로 필터링
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [hideUnselected, setHideUnselected] = useState(false);
