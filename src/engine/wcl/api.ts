@@ -118,6 +118,14 @@ export interface WCLFight {
   difficulty: number;
   encounterID: number;
   friendlyPlayers: number[];
+  /** 페이즈 전환점 — 비어 있으면 단일 페이즈 보스. ms 절대값(이벤트 timestamp 동축). */
+  phaseTransitions: PhaseTransition[];
+}
+
+/** WCL phaseTransitions 응답 단위 — id는 페이즈 번호, startTime은 ms 절대 timestamp. */
+export interface PhaseTransition {
+  id: number;
+  startTime: number;
 }
 
 export interface WCLPlayer {
@@ -167,8 +175,8 @@ export interface WCLReportInfo {
   endTime: number;
   fights: WCLFight[];
   players: WCLPlayer[];
-  /** NPC 목록 (보스, 쫄 등) */
-  npcs: Array<{ id: number; name: string; type: string }>;
+  /** NPC 목록 (보스, 쫄 등). subType="Boss"로 보스 액터 식별. */
+  npcs: Array<{ id: number; name: string; type: string; subType: string }>;
   abilityMap: Record<number, string>;
 }
 
@@ -279,6 +287,20 @@ export async function getReportInfo(reportCode: string): Promise<WCLReportInfo> 
   return promise;
 }
 
+/** WCL phaseTransitions 응답 정규화 — 객체 배열 또는 string JSON 양쪽 방어. */
+function normalizePhaseTransitions(raw: any): PhaseTransition[] {
+  if (!raw) return [];
+  let arr: any = raw;
+  if (typeof raw === "string") {
+    try { arr = JSON.parse(raw); }
+    catch { devLog("[getReportInfo] phaseTransitions JSON parse 실패"); return []; }
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter((p: any) => p && typeof p.startTime === "number")
+    .map((p: any) => ({ id: Number(p.id ?? 0), startTime: Number(p.startTime) }));
+}
+
 async function fetchReportInfo(reportCode: string): Promise<WCLReportInfo> {
   // 서버 공유 캐시 우선 — 같은 리포트를 본 다른 유저가 만든 캐시 재사용
   let data: any = null;
@@ -302,6 +324,7 @@ async function fetchReportInfo(reportCode: string): Promise<WCLReportInfo> {
             difficulty
             encounterID
             friendlyPlayers
+            phaseTransitions { id startTime }
           }
           masterData {
             players: actors(type: "Player") {
@@ -342,12 +365,17 @@ async function fetchReportInfo(reportCode: string): Promise<WCLReportInfo> {
     title: report.title,
     startTime: report.startTime,
     endTime: report.endTime,
-    fights: (report.fights ?? []).map((f: any) => ({ ...f, friendlyPlayers: f.friendlyPlayers ?? [] })),
+    fights: (report.fights ?? []).map((f: any) => ({
+      ...f,
+      friendlyPlayers: f.friendlyPlayers ?? [],
+      phaseTransitions: normalizePhaseTransitions(f.phaseTransitions),
+    })),
     abilityMap,
     npcs: (report.masterData.npcs ?? []).map((a: any) => ({
       id: a.id,
       name: a.name ?? "",
       type: a.type ?? "",
+      subType: a.subType ?? "",
     })),
     players: (report.masterData.players ?? []).map((a: any) => {
       // actors(type: "Player") → type=클래스명, subType=스펙명

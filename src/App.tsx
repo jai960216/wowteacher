@@ -221,7 +221,7 @@ function App() {
   async function selectBossRanking(encounterID: number, encounterName: string, difficulty: number) {
     if (!selectedChar) return;
     if (loading) return; // 중복 클릭 차단
-    setSelectedFight({ id: 0, name: encounterName, startTime: 0, endTime: 0, kill: true, difficulty, encounterID, friendlyPlayers: [] });
+    setSelectedFight({ id: 0, name: encounterName, startTime: 0, endTime: 0, kill: true, difficulty, encounterID, friendlyPlayers: [], phaseTransitions: [] });
     setStatScan(null); setLoading(true); setError(null);
     try {
       const kills = await getMyEncounterRankings(
