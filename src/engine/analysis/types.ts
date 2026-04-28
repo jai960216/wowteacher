@@ -118,6 +118,23 @@ export interface DamageBreakdownEntry {
   refHits: number;
 }
 
+/** 보스 캐스트 한 건 + 메커닉 분류. 차트 다이아몬드 한 점 = 한 스냅샷. */
+export interface BossCastSnapshot {
+  timestamp: number;       // 전투 시작 기준 초 (CastSnapshot과 동일 단위)
+  spellId: number;
+  spellName: string;
+  iconUrl?: string;        // events 응답의 abilityIcon (resolver 별도 — boss 전용 폴백 경로)
+  sourceName: string;      // 시전한 보스/쫄 이름 (멀티-NPC 경우 구분)
+  mechClass: "major" | "normal";   // mechFilter 분류
+}
+
+/** 페이즈 전환 — UI 단위로 정규화된 초 + 라벨. */
+export interface PhaseMarker {
+  timeSec: number;         // 전투 시작 기준 초
+  phaseId: number;         // WCL 페이즈 id
+  label: string;           // 1차: "P{id}" (encounter 매핑은 후속)
+}
+
 /** 종합 분석 결과 */
 export interface FullAnalysis {
   playerName: string;
