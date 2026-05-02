@@ -34,17 +34,40 @@ function toSimcName(name: string): string {
 
 /**
  * Wowhead 툴팁 API에서 단일 스펠 메타데이터 조회
+ *
+ * locale=0(영문) + locale=1(한국어 koKR) 병렬 조회.
+ * (Wowhead locale 코드: 0=enUS, 1=koKR, 2=frFR, 3=deDE, 4=zhCN, 5=zhTW, ...)
+ * - 영문 응답이 정본(아이콘·SimC 매칭용)
+ * - 한국어 응답은 영문과 다를 때만 koName으로 채택 (번역 미등재 spell은 영문이 그대로 떨어짐 → 무시)
+ * - 한국어 fetch 실패는 영문 결과를 망가뜨리지 않음
  */
-async function fetchSpellFromWowhead(spellId: number): Promise<{ name: string; icon: string } | null> {
+async function fetchSpellFromWowhead(
+  spellId: number,
+): Promise<{ name: string; icon: string; koName?: string } | null> {
   try {
-    const url = `${WOWHEAD_TOOLTIP_URL}/${spellId}?dataEnv=1&locale=0`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return {
-      name: data.name ?? "",
-      icon: data.icon ?? "",
-    };
+    const enUrl = `${WOWHEAD_TOOLTIP_URL}/${spellId}?dataEnv=1&locale=0`;
+    const krUrl = `${WOWHEAD_TOOLTIP_URL}/${spellId}?dataEnv=1&locale=1`;
+    const [enRes, krRes] = await Promise.all([
+      fetch(enUrl),
+      fetch(krUrl).catch(() => null),
+    ]);
+    if (!enRes.ok) return null;
+    const enData = await enRes.json();
+    const name: string = enData.name ?? "";
+    const icon: string = enData.icon ?? "";
+
+    let koName: string | undefined;
+    if (krRes && krRes.ok) {
+      try {
+        const krData = await krRes.json();
+        const kr: string = krData?.name ?? "";
+        if (kr && kr !== name) koName = kr;
+      } catch {
+        // koKR JSON 파싱 실패는 영문 결과 유지
+      }
+    }
+
+    return { name, icon, koName };
   } catch {
     return null;
   }
@@ -182,6 +205,7 @@ export class SpellResolver {
       name: wowhead.name,
       simcName: toSimcName(wowhead.name),
       localName: localName || this.cache[spellId]?.localName || "",
+      koName: wowhead.koName,
       icon: wowhead.icon,
       iconUrl: wowhead.icon ? getIconUrl(wowhead.icon) : "",
     };

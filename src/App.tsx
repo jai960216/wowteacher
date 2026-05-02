@@ -2026,17 +2026,20 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
             다이아몬드 모양 + 빨강 액센트로 본인/상대 사각 아이콘과 시각 차별화. */}
         {showBoss && (() => {
           // 아이콘은 spellMeta(SpellResolver) 단일 경로로 해석 — events 응답엔 abilityIcon이 없음.
-          const bossSpellGroupsByName = new Map<string, { spellId: number; sourceName: string; casts: BossCastSnapshot[] }>();
+          // 라벨도 spellMeta.koName(공식 한국어 koKR Wowhead) 우선 → 영문 폴백.
+          // 그룹핑 키는 spellId로 통일 (영문/한글이 한 spell에서 섞여도 같은 행으로 묶임).
+          const bossSpellGroups = new Map<number, { spellId: number; displayName: string; sourceName: string; casts: BossCastSnapshot[] }>();
           for (const c of analysis.bossCasts) {
-            const name = c.spellName || `#${c.spellId}`;
-            const existing = bossSpellGroupsByName.get(name);
+            const fallback = c.spellName || `#${c.spellId}`;
+            const display = spellMeta[c.spellId]?.koName || fallback;
+            const existing = bossSpellGroups.get(c.spellId);
             if (existing) { existing.casts.push(c); }
-            else { bossSpellGroupsByName.set(name, { spellId: c.spellId, sourceName: c.sourceName, casts: [c] }); }
+            else { bossSpellGroups.set(c.spellId, { spellId: c.spellId, displayName: display, sourceName: c.sourceName, casts: [c] }); }
           }
-          const sortedBossSpells = [...bossSpellGroupsByName.entries()]
-            .sort((a, b) => b[1].casts.length - a[1].casts.length);
+          const sortedBossSpells = [...bossSpellGroups.values()]
+            .sort((a, b) => b.casts.length - a.casts.length);
           const visibleBossSpells = sortedBossSpells
-            .filter(([, g]) => !hideUnselected || selectedIds.size === 0 || selectedIds.has(g.spellId));
+            .filter(g => !hideUnselected || selectedIds.size === 0 || selectedIds.has(g.spellId));
           const bossAccent = "#ef4444";
           return (
             <div className="wcl-card rounded" style={{ overflow: "visible", borderLeft: `2px solid ${bossAccent}` }}>
@@ -2060,12 +2063,13 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
               )}
 
               {/* 스킬별 행 — 시전 횟수 많은 순 */}
-              {visibleBossSpells.map(([groupName, g]) => {
+              {visibleBossSpells.map((g) => {
+                const groupName = g.displayName;
                 const isSelected = selectedIds.has(g.spellId);
                 const isDimmed = selectedIds.size > 0 && !isSelected;
                 const bossIcon = spellMeta[g.spellId]?.iconUrl || "";
                 return (
-                  <div key={groupName} className="flex items-center cursor-pointer"
+                  <div key={g.spellId} className="flex items-center cursor-pointer"
                     style={{ borderBottom: "1px solid #16162a", minHeight: 28, opacity: isDimmed ? 0.3 : 1 }}
                     onClick={() => {
                       const next = new Set(selectedIds);
@@ -2112,7 +2116,7 @@ function TimelineTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMet
                                 : <span style={{ transform: "rotate(-45deg)", fontSize: 10, color: "#fca5a5", fontWeight: "bold" }}>!</span>}
                             </div>
                             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1.5 bg-black/95 text-[9px] text-white rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-20" style={{ minWidth: 120 }}>
-                              <div className="font-bold">{c.spellName}</div>
+                              <div className="font-bold">{spellMeta[c.spellId]?.koName || c.spellName}</div>
                               <div className="text-gray-400">{c.sourceName} | {c.timestamp.toFixed(1)}s</div>
                             </div>
                           </a>

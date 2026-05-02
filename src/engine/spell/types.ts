@@ -12,6 +12,11 @@ export interface SpellMeta {
   simcName: string;
   /** 한글 이름 (로그에서 추출) */
   localName: string;
+  /**
+   * 공식 한국어 이름 (Wowhead locale=4 = koKR DBC).
+   * 영문과 동일하게 떨어지면(번역 미등재) undefined로 두어 영문 폴백.
+   */
+  koName?: string;
   /** 아이콘 파일명 */
   icon: string;
   /** 아이콘 URL */
