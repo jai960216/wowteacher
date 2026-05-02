@@ -1327,6 +1327,8 @@ function GearTab({ analysis, rankings, refSpec, statScan, setStatScan, statScanL
           <h3 className="text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">스탯 비교</h3>
           <p className="text-[10px] text-gray-600 mb-3">
             * 전투 시작 시점 스냅샷 — 음식/플라스크/웨폰오일 및 pull 직전 걸린 외부 버프(마주·칠흑 등) 포함. 전투 중간에 발동된 본인 쿨기는 미포함.
+            <br />
+            * 전투 시작(어그로) 이전에 사용한 물약으로 인한 스탯 변화도 포함됩니다.
           </p>
           <div className="wcl-table rounded">
             <div className="wcl-table-header grid grid-cols-[1fr_90px_90px_80px] px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
