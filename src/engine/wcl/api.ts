@@ -1106,9 +1106,6 @@ export async function getMyEncounterRankings(
   const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
   const ranks = parsed?.ranks ?? [];
   devLog(`[getMyEncounterRankings] ${name} encounter=${encounterID} diff=${difficulty}: ${ranks.length}건`);
-  if (ranks.length > 0) {
-    devLog(`[getMyEncounterRankings] 첫 항목:`, JSON.stringify(ranks[0]).slice(0, 500));
-  }
   return ranks.map((r: any) => ({
     reportCode: r.report?.code ?? "",
     fightID: r.report?.fightID ?? 0,
@@ -1226,13 +1223,6 @@ export async function searchCharacter(
     const zr = char[key];
     if (!zr) continue;
     const parsed = typeof zr === "string" ? JSON.parse(zr) : zr;
-    // 첫 난이도에서 원본 키 확인
-    if (parsed?.rankings?.[0] && !((searchCharacter as any)._logged)) {
-      (searchCharacter as any)._logged = true;
-      devLog("[zoneRankings] 원본 보스 키:", Object.keys(parsed.rankings[0]).join(", "));
-      devLog("[zoneRankings] 원본 보스[0]:", JSON.stringify(parsed.rankings[0]).slice(0, 500));
-      devLog("[zoneRankings] 원본 루트 키:", Object.keys(parsed).join(", "));
-    }
     if (parsed && parsed.rankings && parsed.rankings.length > 0) {
       allZoneRankings.push({
         zoneName: parsed.zone?.name ?? parsed.zoneName ?? "",
@@ -1403,13 +1393,8 @@ export async function getEncounterRankings(
   const parsed = typeof rankingsData === "string" ? JSON.parse(rankingsData) : rankingsData;
   const rankings = parsed?.rankings ?? [];
 
-  // 응답 구조 진단 (rankings가 비어있으면 루트 키 + 메타 출력)
   if (rankings.length === 0) {
-    console.warn("[getEncounterRankings] rankings 0건. 원본 응답:", JSON.stringify(parsed).slice(0, 800));
-  } else {
-    const first = rankings[0];
-    devLog("[getEncounterRankings] 원본 첫 항목 키:", Object.keys(first));
-    devLog("[getEncounterRankings] 원본 첫 항목:", JSON.stringify(first).slice(0, 500));
+    console.warn(`[getEncounterRankings] rankings 0건 (encounter=${encounterId} diff=${difficulty} class=${className} spec=${specName ?? "-"} partition=${partition})`);
   }
 
   // WCL 응답의 class는 "DemonHunter" (붙여쓰기) 형태
