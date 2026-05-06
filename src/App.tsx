@@ -601,23 +601,24 @@ function App() {
                   </div>
                 </div>
                 <div className="wcl-table rounded">
-                  <div className="wcl-table-header grid grid-cols-[1fr_60px_60px_90px_40px_60px] px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-                    <div>Boss</div><div className="text-right">Best %</div><div className="text-right">Med %</div><div className="text-right">{metric === "hps" ? "HPS" : "DPS"}</div><div className="text-center">Kills</div><div className="text-right">Fastest</div>
+                  <div className="wcl-table-header grid grid-cols-[1fr_44px_72px_32px] sm:grid-cols-[1fr_60px_60px_90px_40px_60px] gap-x-1 px-2 sm:px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                    <div>Boss</div><div className="text-right">Best</div><div className="hidden sm:block text-right">Med %</div><div className="hidden sm:block text-right">{metric === "hps" ? "HPS" : "DPS"}</div><div className="text-right sm:hidden">{metric === "hps" ? "HPS" : "DPS"}</div><div className="text-center">Kill</div><div className="hidden sm:block text-right">Fastest</div>
                   </div>
                   {zr.bosses.map((b, i) => {
                     return (
                       <div key={i}
-                        className="wcl-table-row grid grid-cols-[1fr_60px_60px_90px_40px_60px] px-3 py-2.5 items-center text-sm cursor-pointer"
+                        className="wcl-table-row grid grid-cols-[1fr_44px_72px_32px] sm:grid-cols-[1fr_60px_60px_90px_40px_60px] gap-x-1 px-2 sm:px-3 py-2.5 items-center text-sm cursor-pointer"
                         onClick={() => selectBossRanking(b.encounterID, b.encounterName, zr.difficulty)}>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
                           <EncounterIcon encounterID={b.encounterID} />
-                          <span className="text-gray-200 text-xs">{encounterNameKr(b.encounterName)}</span>
+                          <span className="text-gray-200 text-xs truncate">{encounterNameKr(b.encounterName)}</span>
                         </div>
                         <div className="text-right"><PctCell value={b.rankPercent} /></div>
-                        <div className="text-right"><PctCell value={b.medianPercent} /></div>
-                        <div className="text-right text-xs text-gray-400 font-mono">{b.highestDPS > 0 ? fmtDPS(b.highestDPS) : "-"}</div>
+                        <div className="hidden sm:block text-right"><PctCell value={b.medianPercent} /></div>
+                        <div className="hidden sm:block text-right text-xs text-gray-400 font-mono">{b.highestDPS > 0 ? fmtDPS(b.highestDPS) : "-"}</div>
+                        <div className="text-right sm:hidden text-xs text-gray-400 font-mono">{b.highestDPS > 0 ? fmtDPS(b.highestDPS) : "-"}</div>
                         <div className="text-center text-xs text-gray-500">{b.totalKills}</div>
-                        <div className="text-right text-xs text-gray-500 font-mono">{b.fastestKill > 0 ? fmtDur(b.fastestKill) : "-"}</div>
+                        <div className="hidden sm:block text-right text-xs text-gray-500 font-mono">{b.fastestKill > 0 ? fmtDur(b.fastestKill) : "-"}</div>
                       </div>
                     );
                   })}
@@ -1028,7 +1029,7 @@ function AnalysisView({ analysis, spellMeta, cColor, activeTab, setActiveTab,
           const gap = a.isHealer ? (a.healing?.hpsGap ?? 0) : a.damage.dpsGap;
           const gapPct = a.isHealer ? (a.healing?.hpsGapPercent ?? 0) : a.damage.dpsGapPercent;
           return (
-            <div className="grid grid-cols-4 gap-3" style={{ borderTop: "1px solid #1c1c30", paddingTop: 12 }}>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" style={{ borderTop: "1px solid #1c1c30", paddingTop: 12 }}>
               <div className="text-center">
                 <div className="text-lg font-black" style={{ color: "#a78bfa" }}>{fmtDPS(my)}</div>
                 <div className="text-[10px] text-gray-600">내 {metricLabel}</div>
@@ -1038,8 +1039,8 @@ function AnalysisView({ analysis, spellMeta, cColor, activeTab, setActiveTab,
                 <div className="text-[10px] text-gray-600">상대 {metricLabel}</div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-black" style={{ color: a.gear.myIlvl >= a.gear.refIlvl ? "#4ade80" : "#f59e0b" }}>
-                  {a.gear.myIlvl > 0 ? a.gear.myIlvl : "?"} <span className="text-xs text-gray-600">vs</span> {a.gear.refIlvl > 0 ? a.gear.refIlvl : "?"}
+                <div className="text-lg font-black whitespace-nowrap" style={{ color: a.gear.myIlvl >= a.gear.refIlvl ? "#4ade80" : "#f59e0b" }}>
+                  {a.gear.myIlvl > 0 ? a.gear.myIlvl : "?"}<span className="text-xs text-gray-600 mx-1">vs</span>{a.gear.refIlvl > 0 ? a.gear.refIlvl : "?"}
                 </div>
                 <div className="text-[10px] text-gray-600">아이템 레벨</div>
               </div>
@@ -2362,9 +2363,9 @@ function CooldownsTab({ analysis, spellMeta }: { analysis: FullAnalysis; spellMe
   };
 
   return (
-    <div className="flex gap-4" style={{ minHeight: 400 }}>
+    <div className="flex flex-col lg:flex-row gap-4" style={{ minHeight: 400 }}>
       {/* 왼쪽: 스킬 목록 (액티브/버프 구분) */}
-      <div className="flex-shrink-0 overflow-y-auto" style={{ width: 220, maxHeight: 600 }}>
+      <div className="flex-shrink-0 overflow-y-auto w-full lg:w-[220px] max-h-[280px] lg:max-h-[600px]">
         {(["cast", "aura"] as const).map(type => {
           const items = allSkills.filter(s => s.type === type);
           if (items.length === 0) return null;
